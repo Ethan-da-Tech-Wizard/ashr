@@ -1,17 +1,30 @@
+/*
+   Program: ashr - ai-explain.css
+   Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+   Last Modified: 2026-11-18
+   Purpose: Styles for the "Ask a model" bar, its buttons, the loading spinner and the answer box on a request card.
+*/
 /* "Ask a model" bar inside the card's What-is-this drawer (ai-explain-ui.js) */
+/* Layout of the bar: label on the left, buttons on the right. */
 .ai-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 14px; }
 .ai-label { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+/* The two model buttons sit in a row. */
 .ai-pills { display: flex; gap: 8px; }
+/* A rounded outline button; it dims when disabled and shrinks slightly while pressed. */
 .ai-pill { border: 0; border-radius: 99px; padding: 8px 14px; font-size: 13px; font-weight: 700; color: var(--ink);
   background: transparent; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.18); }
 .ai-pill:disabled { opacity: 0.45; }
 .ai-pill:active { transform: scale(0.96); }
+/* The answer box under the bar; the "hidden" class hides it until a button is pressed. */
 .ai-explain-box { margin-top: 10px; padding: 12px 14px; border-radius: 16px; background: rgba(255, 255, 255, 0.05); font-size: 14px; line-height: 1.4; }
 .ai-explain-box.hidden { display: none; }
+/* The "Asking ..." line with a spinner. The spinner is a ring whose top edge is coloured and spins. */
 .ai-loading { display: flex; align-items: center; gap: 8px; color: var(--muted); }
 .ai-spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.2); border-top-color: var(--ember); animation: ai-spin 0.7s linear infinite; }
+/* The small coloured "Gemini says" label above the answer text. */
 .ai-badge { font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ember); margin-bottom: 4px; }
 .ai-sim-tag { color: var(--muted); font-weight: 600; text-transform: none; letter-spacing: 0; }
 .ai-text { margin: 0; color: #dcefe2; }
 .ai-error { color: var(--rust); }
+/* Spin animation used by the spinner: one full turn. */
 @keyframes ai-spin { to { transform: rotate(360deg); } }

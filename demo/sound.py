@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# Program: ashr - sound.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Adds voice-over, sound effects and music to the demo video: makes missing audio clips (ElevenLabs or local synthesis), then mixes everything with ffmpeg.
 """Add voice-over, sound effects and music to the 60-second animation.
 
 Reads docs/demo-60s.mp4, writes docs/demo-60s-sound.mp4.
@@ -10,6 +14,7 @@ Needs ELEVENLABS_API_KEY in the environment (only when a voice clip is missing) 
     python3 demo/sound.py            # make missing clips, then mix
     python3 demo/sound.py --mix      # mix only, from the cached clips
 """
+# Standard library imports.
 from __future__ import annotations
 
 import json
@@ -19,19 +24,24 @@ import sys
 import urllib.error
 import urllib.request
 
+# Make the folder of this file importable so "import synth" finds demo/synth.py.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import synth  # noqa: E402
 
+# Paths for the repo, the cached audio folder, and the input and output videos.
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 AUDIO = os.path.join(ROOT, "demo", "audio")
 VIDEO_IN = os.path.join(ROOT, "docs", "demo-60s.mp4")
 VIDEO_OUT = os.path.join(ROOT, "docs", "demo-60s-sound.mp4")
+# ElevenLabs web address, the voice to use (with a fallback id), and the video length in seconds.
 API = "https://api.elevenlabs.io"
 VOICE_NAME = "Brian"                    # calm, low, American
 VOICE_FALLBACK = "nPczCjzI2devNBz1zQrb"
 LENGTH = 60.0
 
+# The voice lines: when each starts, the latest it may end, the clip file name and the words spoken.
 # (start second, latest end second, file name, words). "Asher" is how the name is said aloud.
+# List of the ten voice lines.
 VOICE = [
     (0.6, 5.2, "vo-1-title", "This is Asher. It keeps your coding agents in order."),
     (5.9, 12.8, "vo-2-problem", "You start a few agents and walk away. One by one, they stop, and wait for permission."),
@@ -45,6 +55,7 @@ VOICE = [
     (55.9, 59.8, "vo-9-end", "Asher. Safe commands pass. Risky ones ask you first."),
 ]
 
+# Sound effect cues: second, effect name and volume, matched to the actions in demo/record.py.
 # (second, effect, volume) matched to demo/record.py
 CUES = [
     (0.0, "fx-intro", 0.55), (4.5, "fx-whoosh", 0.35),
@@ -54,11 +65,13 @@ CUES = [
     (43.15, "fx-tap", 0.8), (45.15, "fx-tap", 0.8), (46.55, "fx-tap", 0.8), (46.65, "fx-redirect", 0.8),
     (55.4, "fx-intro", 0.5),
 ]
+# The music clip name and the text prompt given to the music generator.
 MUSIC = ("music", "Minimal modern electronic underscore for a tech product demo. Warm soft synth bass pulse, airy pads, "
          "light clicky percussion, confident and calm, around 100 bpm. Builds gently, then a clean soft ending.")
 
 
 def call(path: str, body: dict, query: str = "") -> bytes:
+    """POST JSON to the ElevenLabs API and return the raw bytes. Stops with a message if the API key is not set, and raises RuntimeError if the service refuses."""
     key = os.environ.get("ELEVENLABS_API_KEY")
     if not key:
         sys.exit("ELEVENLABS_API_KEY is not set, and a clip is missing. Use --mix to mix cached clips only.")
@@ -72,6 +85,7 @@ def call(path: str, body: dict, query: str = "") -> bytes:
 
 
 def voice_id() -> str:
+    """Look up the voice named VOICE_NAME and return its id; use the fallback id if the lookup fails."""
     key = os.environ.get("ELEVENLABS_API_KEY", "")
     try:
         req = urllib.request.Request(f"{API}/v1/voices", headers={"xi-api-key": key})
@@ -91,6 +105,7 @@ def clip(name: str) -> str:
 
 
 def make_clips() -> None:
+    """Create any audio clips that are missing: voice lines (ElevenLabs), effects (synth.py) and music (ElevenLabs, or synth.py if that fails)."""
     os.makedirs(AUDIO, exist_ok=True)
     vid = None
     for _start, _end, name, words in VOICE:
@@ -116,17 +131,20 @@ def make_clips() -> None:
 
 
 def seconds_of(path: str) -> float:
+    """Return the length of an audio or video file in seconds using ffprobe."""
     out = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path],
                          capture_output=True, text=True, check=True).stdout
     return float(out.strip())
 
 
 def mix() -> None:
+    """Build one ffmpeg filter graph: delay each voice line and effect to its time, mix them, duck the music under the voice, normalise loudness and write the final video with the original picture unchanged."""
     inputs, filters, voice_tags, fx_tags = ["-i", VIDEO_IN], [], [], []
     n = 1
     for start, end, name, _words in VOICE:
         length = seconds_of(clip(name))
         room = end - start
+        # Speed a line up slightly (at most 1.25 times) only if it is longer than its scene.
         tempo = min(max(length / room, 1.0), 1.25)  # speed up a little only if the line overruns its scene
         if length / tempo > room + 0.05:
             print(f"warning: {name} is {length:.1f}s for a {room:.1f}s scene")
@@ -155,6 +173,7 @@ def mix() -> None:
     print("wrote", VIDEO_OUT, f"{os.path.getsize(VIDEO_OUT) / 1e6:.1f} MB, {seconds_of(VIDEO_OUT):.1f}s")
 
 
+# When run as a script: make clips unless --mix was given, then mix.
 if __name__ == "__main__":
     if "--mix" not in sys.argv:
         make_clips()

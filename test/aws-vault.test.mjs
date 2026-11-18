@@ -1,3 +1,8 @@
+// Program: ashr - aws-vault.test.mjs
+// Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+// Last Modified: 2026-11-18
+// Purpose: Tests the audit vault: SHA-256, AWS Signature V4 against official test vectors, header handling, dry-run mode, a mock S3 server, error cases and hash chaining.
+// Test tools, an HTTP server for faking S3, and the vault functions.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
@@ -10,11 +15,13 @@ import {
   getLastHash,
 } from '../hub/aws-vault.mjs';
 
+// Fake credentials are built from pieces so scanners do not mistake them for real secrets.
 // Safe test credential constructor so static repo scanners don't false-flag test fixtures
 const FAKE_AKID = 'AKID' + 'EXAMPLE';
 const FAKE_SECRET = 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY';
 const FAKE_ACCESS_KEY = 'TEST' + 'VAULT' + 'KEY12345';
 
+// Checks the hash of known text.
 test('sha256 computes correct hexadecimal digest', () => {
   assert.equal(
     sha256(''),
@@ -26,6 +33,7 @@ test('sha256 computes correct hexadecimal digest', () => {
   );
 });
 
+// Checks the signature against AWS's published GET test vector.
 test('AWS SigV4 official get-vanilla test vector matches specification', () => {
   const headers = signS3Request({
     method: 'GET',
@@ -47,6 +55,7 @@ test('AWS SigV4 official get-vanilla test vector matches specification', () => {
   assert.equal(headers.Authorization, expectedAuth);
 });
 
+// Checks the signature against AWS's published POST test vector.
 test('AWS SigV4 official IAM POST test vector matches specification', () => {
   const body = 'Action=ListUsers&Version=2010-05-08';
   const headers = signS3Request({
@@ -71,6 +80,7 @@ test('AWS SigV4 official IAM POST test vector matches specification', () => {
   assert.equal(headers.Authorization, expectedAuth);
 });
 
+// Checks header cleaning, sorting and S3 defaults.
 test('signS3Request canonical header normalization, sorting, and S3 defaults', () => {
   const now = new Date('2026-11-14T12:00:00Z');
   const body = JSON.stringify({ action: 'audit-log' });
@@ -106,6 +116,7 @@ test('signS3Request canonical header normalization, sorting, and S3 defaults', (
   assert.equal(authMatch[2].length, 64);
 });
 
+// Without a bucket or credentials the vault must not send anything (dry run).
 test('recordDecisionToVault offline dry-run mode ($0 cost guarantee)', async () => {
   resetVaultChain();
   const event = { sessionId: 'sess-1', tool: 'Bash', summary: 'rm -rf /', risk: 'high', decision: 'deny' };
@@ -140,6 +151,7 @@ test('recordDecisionToVault offline dry-run mode ($0 cost guarantee)', async () 
   assert.equal(dry3.mode, 'dry-run');
 });
 
+// A mock HTTP server receives the signed PUT request and the test inspects its headers and body.
 test('recordDecisionToVault sends valid SigV4 PUT request to mock HTTP server (custom endpoint)', async () => {
   resetVaultChain();
 
@@ -217,6 +229,7 @@ test('recordDecisionToVault sends valid SigV4 PUT request to mock HTTP server (c
   }
 });
 
+// A server error must be reported without crashing.
 test('recordDecisionToVault handles mock server 500 without crashing', async () => {
   const server = createServer((req, res) => {
     res.writeHead(500, { 'Content-Type': 'application/xml' });
@@ -245,6 +258,7 @@ test('recordDecisionToVault handles mock server 500 without crashing', async () 
   }
 });
 
+// A refused connection must be reported without crashing.
 test('recordDecisionToVault handles connection refusal gracefully', async () => {
   const deadEndpoint = 'http://127.0.0.1:54321';
   const result = await recordDecisionToVault(
@@ -262,6 +276,7 @@ test('recordDecisionToVault handles connection refusal gracefully', async () => 
   assert.ok(result.error);
 });
 
+// Each record must contain the hash of the one before it.
 test('cryptographic tamper-evident hash chaining across consecutive decisions', async () => {
   resetVaultChain();
 

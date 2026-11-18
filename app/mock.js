@@ -1,6 +1,12 @@
+// Program: ashr - mock.js
+// Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+// Last Modified: 2026-11-18
+// Purpose: Fake hub for demo mode: seeds sample agents and requests, answers decide/say/kill/explain calls locally, and adds a new request after a few seconds.
 // Demo data so the app works with no hub (screenshots, judges' phones, backup demo).
+// Current time in milliseconds.
 const now = () => Date.now();
 
+// Build a fresh sample state: five agent sessions, two waiting requests and a short guard log. Times are set relative to now.
 function seed() {
   const t = now();
   return {
@@ -31,16 +37,22 @@ function seed() {
   };
 }
 
+// Create the demo hub. Returns post (fake API calls), subscribe (live state) and reset.
 export function createDemo() {
+  // All demo data lives in this variable; subs holds the listener functions.
   let state = seed();
   const subs = new Set();
+  // Send a copy of the state to every listener.
   const emit = () => subs.forEach((fn) => fn(structuredClone(state)));
 
+  // Change fields of one session and update its time.
   const setSession = (id, patch) => {
     state.sessions = state.sessions.map((s) => (s.id === id ? { ...s, ...patch, updatedAt: now() } : s));
   };
 
+  // Fake version of the hub's POST endpoints, chosen by path.
   const post = async (path, body) => {
+    // Decide: remove the ask, add a log entry, mark the agent working, and mark it done 6 seconds later.
     if (path === "/api/decide") {
       const ask = state.asks.find((a) => a.id === body.askId);
       if (!ask) return {};
@@ -49,12 +61,15 @@ export function createDemo() {
       setSession(ask.sessionId, { state: "working" });
       emit();
       setTimeout(() => { setSession(ask.sessionId, { state: "done" }); emit(); }, 6000);
+    // Say: show the typed text as the agent's new title and mark it working.
     } else if (path === "/api/say") {
       setSession(body.sessionId, { state: "working", title: body.text.slice(0, 60) });
       emit();
+    // Kill: mark the agent idle.
     } else if (path === "/api/kill") {
       setSession(body.sessionId, { state: "idle" });
       emit();
+    // Explain: return a canned, clearly "simulated" answer for the chosen model.
     } else if (path === "/api/explain") {
       const ask = state.asks.find((a) => a.id === body?.askId) || { summary: "demo command", risk: "medium" };
       const provider = body?.provider === "grok" ? "grok" : "gemini";
@@ -70,6 +85,7 @@ export function createDemo() {
     return {};
   };
 
+  // Register a listener, send it the state now, and add a third request after 9 seconds so the demo feels alive.
   const subscribe = (fn) => {
     subs.add(fn);
     fn(structuredClone(state));
@@ -85,5 +101,6 @@ export function createDemo() {
     return () => { subs.delete(fn); clearTimeout(timer); };
   };
 
+  // Expose the demo's functions.
   return { post, subscribe, reset: () => { state = seed(); emit(); } };
 }

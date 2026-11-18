@@ -1,8 +1,14 @@
+// Program: ashr - fuzz.test.mjs
+// Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+// Last Modified: 2026-11-18
+// Purpose: Stress tests for the hub with hostile or odd input: bad JSON, huge bodies, concurrency, stale ids, prototype pollution, odd characters, path traversal and dropped connections.
+// Test tools, Node's HTTP client and the hub starter.
 import { test, before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { startHub } from '../hub/server.mjs';
 
+// The running hub and its address; a fixed token and two sets of request headers (with token for the phone API, plain for hooks).
 let hub, base;
 const TOKEN = 'fuzz-test-token-xyz';
 const authHeaders = {
@@ -13,7 +19,9 @@ const hookHeaders = {
   'Content-Type': 'application/json',
 };
 
+// Sends exactly the bytes given, so tests can send broken or chunked requests that fetch would refuse to make.
 // Raw HTTP helper to send arbitrary strings, chunked streams, or raw buffers
+// Make one raw HTTP request and resolve with the status and body.
 function rawRequest({ method = 'POST', path = '/', headers = {}, body = null }) {
   return new Promise((resolve) => {
     const req = http.request(
@@ -50,6 +58,7 @@ function rawRequest({ method = 'POST', path = '/', headers = {}, body = null }) 
   });
 }
 
+// A normal JSON POST helper.
 const post = (path, body, headers = authHeaders) =>
   fetch(base + path, {
     method: 'POST',
@@ -57,6 +66,7 @@ const post = (path, body, headers = authHeaders) =>
     body: typeof body === 'string' ? body : JSON.stringify(body),
   });
 
+// Start the hub before all tests and stop it afterwards.
 before(async () => {
   // Use a short holdMs (500ms) for fast timeout tests
   hub = await startHub({ port: 0, token: TOKEN, host: '127.0.0.1', holdMs: 500 });
@@ -67,6 +77,7 @@ after(async () => {
   if (hub) await hub.close();
 });
 
+// Group 1: malformed JSON must give errors but not crash the hub.
 describe('1. Malformed JSON handling', () => {
   const malformedBodies = [
     '{ not valid json }',
@@ -113,6 +124,7 @@ describe('1. Malformed JSON handling', () => {
   });
 });
 
+// Group 2: request bodies over 1 MB must be refused and the hub must stay healthy.
 describe('2. Huge request payloads (> 1MB / body bomb)', () => {
   test('Payload slightly under 1MB is accepted', async () => {
     // 800 KB valid JSON
@@ -186,6 +198,7 @@ describe('2. Huge request payloads (> 1MB / body bomb)', () => {
   });
 });
 
+// Group 3: many fast requests respect the queue limit and racing decisions are handled.
 describe('3. Concurrent rapid calls and queue limits', () => {
   test('Concurrent rapid calls to /hook/permission correctly enforce MAX_OPEN_ASKS limit', async () => {
     // MAX_OPEN_ASKS is 20. Launch 28 concurrent high-risk permission requests.
@@ -263,6 +276,7 @@ describe('3. Concurrent rapid calls and queue limits', () => {
   });
 });
 
+// Group 4: stale or invalid ids and parameters give the right error codes.
 describe('4. Stale ask decisions, invalid sessionIds, and parameter edge cases', () => {
   test('/api/decide rejects stale / non-existent askId with 410', async () => {
     const res = await post('/api/decide', { askId: 'ask_nonexistent_1234', behavior: 'allow' }, authHeaders);
@@ -381,6 +395,7 @@ describe('4. Stale ask decisions, invalid sessionIds, and parameter edge cases',
   });
 });
 
+// Group 5: prototype pollution keys, empty bodies and wrong types are handled safely.
 describe('5. Prototype pollution & missing fields fuzzing', () => {
   test('Requests containing prototype pollution keys (__proto__, constructor) do not pollute Object prototype', async () => {
     // Verify clean baseline
@@ -487,6 +502,7 @@ describe('5. Prototype pollution & missing fields fuzzing', () => {
   });
 });
 
+// Group 6: control characters, Unicode tricks, path traversal and bad URL encoding.
 describe('6. Unicode, null bytes, control characters, and injection attacks', () => {
   test('Null bytes and control characters in command text, session_id, and titles', async () => {
     // Send a low risk tool call with null bytes and control characters so it resolves immediately
@@ -571,6 +587,7 @@ describe('6. Unicode, null bytes, control characters, and injection attacks', ()
   });
 });
 
+// Group 7: the event stream and held requests clean up when a client disconnects.
 describe('7. SSE stream stability and client disconnects', () => {
   test('SSE stream handles abrupt client aborts during active state emits', async () => {
     // Open 5 SSE clients and abruptly destroy their sockets

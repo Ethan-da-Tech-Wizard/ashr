@@ -1,18 +1,26 @@
+// Program: ashr - hub-auth.test.mjs
+// Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+// Last Modified: 2026-11-18
+// Purpose: Tests pairing and tokens on the hub: one-time codes, several paired phones, the JSON requirement for hooks, queue limits and stale decisions.
+// Test tools and the hub starter.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startHub } from '../hub/server.mjs';
 
+// The hub and its address, a JSON header, and two helpers to post JSON and build a permission request.
 let hub, base;
 const JSON_H = { 'Content-Type': 'application/json' };
 const post = (path, body, headers = JSON_H) => fetch(base + path, { method: 'POST', headers, body: JSON.stringify(body) });
 const perm = (cmd, sid = 'q1') => ({ hook_event_name: 'PermissionRequest', session_id: sid, cwd: '/repo/wt', tool_name: 'Bash', tool_input: { command: cmd } });
 
+// Start a hub before the tests and stop it after.
 before(async () => {
   hub = await startHub({ port: 0, host: '127.0.0.1', holdMs: 3000 });
   base = `http://127.0.0.1:${hub.port}`;
 });
 after(() => hub.close());
 
+// A pairing code works once and then the token opens /api/state.
 test('pair code works once, then the session token opens /api/state', async () => {
   const { url } = await (await post('/hook/pair-code', {})).json();
   const code = new URL(url).searchParams.get('pair');
@@ -28,6 +36,7 @@ test('pair code works once, then the session token opens /api/state', async () =
   assert.equal((await fetch(base + '/api/state', { headers: { Authorization: 'Bearer nope' } })).status, 401);
 });
 
+// Several phones can pair, each with its own token.
 test('several sessions can pair, each with its own token', async () => {
   const tokens = [];
   for (let i = 0; i < 2; i++) {
@@ -38,12 +47,14 @@ test('several sessions can pair, each with its own token', async () => {
   for (const t of tokens) assert.equal((await fetch(base + `/api/state?t=${t}`)).status, 200);
 });
 
+// Hook calls without a JSON content type are refused.
 test('hooks need application/json', async () => {
   const res = await fetch(base + '/hook/event', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: '{}' });
   assert.equal(res.status, 415);
   assert.equal((await fetch(base + '/hook/event', { method: 'POST', body: '{}' })).status, 415);
 });
 
+// When the queue is full new asks are denied, and a decision for a gone ask gives 410.
 test('queue full denies, stale decide gets 410', async () => {
   const { url } = await (await post('/hook/pair-code', {})).json();
   const { token } = await (await post('/api/pair', { code: new URL(url).searchParams.get('pair') })).json();

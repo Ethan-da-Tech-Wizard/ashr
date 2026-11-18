@@ -1,17 +1,34 @@
+// Program: ashr - card.js
+// Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+// Last Modified: 2026-11-18
+// Purpose: Builds the HTML for one swipeable request card (plain-English headline, exact command, risk tag, drawer with details) and wires its "What is this?" drawer.
 // The request card: blurred art on top, a dark folder panel below with the plain-English
 // sentence, the exact request, and a "What is this?" drawer with the details and AI answers.
+// explain turns a request into plain English; ownerName gives the GitHub handle; aiExplainBarHtml makes the model buttons.
 import { explain } from "./explain.js";
 import { ownerName } from "./agents.js";
 import { aiExplainBarHtml } from "./ai-explain-ui.js";
 
+// Escape helper so request text is shown as text, never run as HTML.
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+/**
+ * Build the inner HTML of a request card.
+ * @param {object} ask the request (tool, summary, detail, risk, reasons).
+ * @param {object} session the agent session that made it.
+ * @param {string} waited text such as "12s" for how long it has waited.
+ * @returns {string} an HTML string.
+ */
 export function cardHtml(ask, session, waited) {
+  // Use the inputs only if they are objects, so missing data cannot crash the page.
   const a = ask && typeof ask === "object" ? ask : null;
   const s = session && typeof session === "object" ? session : {};
+  // There is a change to show only when the detail text exists and differs from the summary.
   const hasDiff = Boolean(a?.detail && a?.detail !== a?.summary);
+  // Get the plain-English sentence and bullet points for this request.
   const { headline, points } = explain(a, s.agent);
   const by = ownerName(s.owner);
+  // Default the risk to "medium" and the summary to an empty string when missing.
   const risk = a?.risk || "medium";
   const summary = a?.summary || "";
   return `
@@ -40,9 +57,12 @@ export function cardHtml(ask, session, waited) {
     </div>`;
 }
 
+// Wire up the drawer button on a card.
 // Opens and closes the "What is this?" drawer.
+// Toggle the card's "open" class, change the button label and keep aria-expanded in sync for screen readers.
 export function wireCard(card) {
   const why = card.querySelector('[data-act="why"]');
+  // If the card has no drawer button, there is nothing to do.
   if (!why) return;
   why.onclick = () => {
     const open = card.classList.toggle("open");

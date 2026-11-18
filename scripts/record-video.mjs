@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+// Program: ashr - record-video.mjs
+// Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+// Last Modified: 2026-11-18
+// Purpose: Records the phone-app backup demo video: starts a hub, drives a headless Chromium over the DevTools protocol through a scripted scenario, and encodes frames with ffmpeg into MP4, WebM and GIF files.
 // Automated video recording script for ashr stage demo.
 // Launches dedicated hub server on port 7788, launches headless Chromium with mobile viewport (430x932),
 // connects via Chrome DevTools Protocol (CDP), captures 1700 frames at 20 fps (exactly 85.00 seconds),
@@ -8,17 +12,20 @@
 // 3. docs/demo.gif (animated preview, < 5MB)
 // Zero external npm dependencies. Pure Node 24 native WebSocket + CDP + FFmpeg.
 
+// Node helpers and the hub starter.
 import { spawn, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startHub } from '../hub/server.mjs';
 
+// Work out the repo folder and the docs output folder.
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT = path.resolve(__dirname, '..');
 const DOCS_DIR = path.resolve(ROOT, 'docs');
 
+// Settings: hub port, a fixed demo token, frames per second and the total number of frames (1700 frames at 20 fps is 85 seconds), and the output file paths.
 const PORT = Number(process.env.PORT) || 7788;
 const TOKEN = 'ashr-stage-backup-demo-2026';
 const FPS = 20;
@@ -28,11 +35,13 @@ const MP4_PATH = path.join(DOCS_DIR, 'demo.mp4');
 const WEBM_PATH = path.join(DOCS_DIR, 'demo.webm');
 const GIF_PATH = path.join(DOCS_DIR, 'demo.gif');
 
+// Do the whole recording.
 async function main() {
   console.log('=== Starting ashr 90-Second Backup Video Recorder ===');
 
   fs.mkdirSync(DOCS_DIR, { recursive: true });
 
+  // Start a hub just for recording, on localhost only.
   // 1. Start dedicated hub instance
   console.log(`Starting dedicated hub on port ${PORT}...`);
   const hub = await startHub({
@@ -42,6 +51,7 @@ async function main() {
   });
   console.log(`Hub running on port ${hub.port}`);
 
+  // Helper that posts JSON to a local hook endpoint.
   const postHook = async (pathUrl, body) => {
     const res = await fetch(`http://127.0.0.1:${PORT}${pathUrl}`, {
       method: 'POST',
@@ -52,6 +62,7 @@ async function main() {
     return res.json().catch(() => ({}));
   };
 
+  // Create four fake agent sessions so the top row is filled.
   // Seed initial fleet agents
   await postHook('/hook/fake', {
     session: { id: 'claude-demo', agent: 'claude', title: 'fix the login tests', cwd: '/repo/wt-auth', state: 'working' }
@@ -66,6 +77,7 @@ async function main() {
     session: { id: 'grok-demo', agent: 'grok', title: 'audit auth & dependencies', cwd: '/repo/wt-audit', state: 'working', owner: 'Ethan-da-Tech-Wizard' }
   });
 
+  // Start headless Chromium with remote debugging, sized like a phone, and open the app with the token. cleanup() stops Chromium and the hub, also on Ctrl-C.
   // 2. Launch headless Chromium
   const CDP_PORT = 9245;
   console.log(`Launching Chromium with CDP on port ${CDP_PORT}...`);
@@ -87,6 +99,7 @@ async function main() {
   process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
   process.on('SIGTERM', async () => { await cleanup(); process.exit(143); });
 
+  // Poll (up to about 6 seconds) until Chromium lists a page tab.
   // Wait for Chromium CDP tab
   let tab = null;
   for (let i = 0; i < 30; i++) {
@@ -103,6 +116,7 @@ async function main() {
     throw new Error('Chromium failed to start or expose CDP tab');
   }
 
+  // Connect to the tab over a WebSocket and wrap the protocol in sendCDP(method, params) which returns the result.
   // 3. Connect WebSocket CDP
   const ws = new WebSocket(tab.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => {
@@ -125,6 +139,7 @@ async function main() {
     ws.send(JSON.stringify({ id, method, params }));
   });
 
+  // Make the page behave like a 430 by 932 phone at 2x with touch.
   await sendCDP('Emulation.setDeviceMetricsOverride', {
     width: 430,
     height: 932,
@@ -134,6 +149,7 @@ async function main() {
   });
   await sendCDP('Page.enable');
 
+  // Inject a fake touch cursor and a caption bar into the page, with helper functions to move the cursor and change the caption.
   // Wait for initial render & inject visual indicators and captions
   await new Promise(r => setTimeout(r, 1200));
   await sendCDP('Runtime.evaluate', {
@@ -253,6 +269,7 @@ async function main() {
     })()`
   });
 
+  // Start ffmpeg reading JPEG frames from stdin and encoding an MP4 (scaled to 860 by 1864).
   // 4. Spawn ffmpeg with explicit framerate and drain handling
   console.log(`Spawning ffmpeg encoding to ${MP4_PATH}...`);
   const ffmpeg = spawn('ffmpeg', [
@@ -276,11 +293,13 @@ async function main() {
   let ffmpegErr = '';
   ffmpeg.stderr.on('data', (d) => { ffmpegErr += d.toString(); });
 
+  // Linear interpolation between a and b, clamped to the range 0 to 1.
   const lerp = (a, b, t) => a + (b - a) * Math.max(0, Math.min(1, t));
 
   console.log(`Recording ${TOTAL_FRAMES} frames (~${TOTAL_FRAMES / FPS}s duration)...`);
   const tStart = Date.now();
 
+  // Main loop: for every frame, run the actions scheduled for that frame number (captions, cursor moves, taps, swipes), then take a screenshot and give it to ffmpeg.
   for (let frame = 0; frame < TOTAL_FRAMES; frame++) {
     // =========================================================
     // SCENE 1: Introduction & Fleet Overview (0s - 12s)
@@ -650,6 +669,7 @@ async function main() {
       await sendCDP('Runtime.evaluate', { expression: `window.scrollTo(0, ${scrollY})` });
     }
 
+    // Screenshot the page and write it to ffmpeg, waiting if ffmpeg is not ready for more data.
     // Capture frame and write to ffmpeg stdin with drain backpressure handling
     const shot = await sendCDP('Page.captureScreenshot', { format: 'jpeg', quality: 85 });
     const buf = Buffer.from(shot.data, 'base64');
@@ -664,6 +684,7 @@ async function main() {
     }
   }
 
+  // Close ffmpeg, then make a WebM and a small GIF from the MP4 and print the file sizes.
   // Finalize video encoding
   console.log('Finalizing ffmpeg encoding...');
   ffmpeg.stdin.end();
@@ -703,6 +724,7 @@ async function main() {
   console.log(`Duration:    ${(TOTAL_FRAMES / FPS).toFixed(2)} seconds (860x1864 retina)`);
 }
 
+// Report any fatal error and exit with 1.
 main().catch(async (err) => {
   console.error('Fatal recording error:', err);
   process.exit(1);

@@ -1,11 +1,9 @@
-// ==============================================================================
-// Program: server.mjs
-// Programmer: Ethan-da-Tech-Wizard
-// Course: CIS 156 / Advanced Systems
-// Last Modified: November 18, 2026
-// Purpose: HTTP hub server coordinating phone-in-the-loop agent supervision and API routes
-// ==============================================================================
+// Program: ashr - server.mjs
+// Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+// Last Modified: 2026-11-18
+// Purpose: The ashr hub: a dependency-free HTTP and server-sent-events server that serves the phone app, protects the API with tokens, and lets only localhost call the agent hooks.
 // ashr hub: zero-dependency HTTP + SSE server. See docs/CONTRACT.md.
+// Node built-in modules, then the hub's own parts: state, owner lookup, auth, tmux control and the route handlers.
 import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -18,6 +16,7 @@ import { createAuth } from './auth.mjs';
 import * as tmux from './tmux.mjs';
 import * as routes from './routes.mjs';
 
+// Work out where the files are: this folder, the phone app folder, a 1 MB limit for request bodies, and the content types for static files.
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP_DIR = path.resolve(HERE, '../app');
 const MAX_BODY = 1_000_000;
@@ -27,17 +26,21 @@ const MIME = {
   '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.ico': 'image/x-icon', '.txt': 'text/plain',
 };
 
+// Addresses that mean "this computer".
 const LOCAL = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+// A hook request counts as local only if it comes from this computer and carries no proxy headers, because a tunnel connects from localhost too.
 // A tunnel (cloudflared) connects from localhost, so also reject proxied requests.
 const isLocalHook = (req) =>
   LOCAL.has(req.socket.remoteAddress) && !req.headers['x-forwarded-for'] && !req.headers['cf-connecting-ip'];
 
+// Send a JSON reply with the given status and no caching.
 const send = (res, status, obj) => {
   const body = JSON.stringify(obj);
   res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(body);
 };
 
+// Read a request body as JSON (max 1 MB). Rejects on invalid JSON or a too-large body; an empty body or a non-object becomes {}.
 function readJson(req) {
   return new Promise((resolve, reject) => {
     let size = 0;
@@ -58,11 +61,13 @@ function readJson(req) {
   });
 }
 
+// Check the session token from the Authorization header ("Bearer ...") or the ?t= query value (used by the event stream).
 function tokenOk(auth, req, url) {
   const m = /^Bearer (.+)$/.exec(req.headers.authorization ?? '');
   return auth.valid(m ? m[1] : url.searchParams.get('t') ?? '');
 }
 
+// Serve a file from the app folder. The path check blocks any attempt to leave the folder (403); unknown files give 404.
 function serveStatic(res, pathname) {
   let rel;
   try {
@@ -80,6 +85,7 @@ function serveStatic(res, pathname) {
   });
 }
 
+// Open the live event stream: send headers, the first state, remember the client, and send a ping every 15 seconds. Cleanup runs when the client leaves.
 function openStream(ctx, req, res) {
   // no-transform stops Cloudflare from compressing (and so buffering) the stream.
   res.writeHead(200, {
@@ -102,11 +108,15 @@ function openStream(ctx, req, res) {
   req.on('close', cleanup);
 }
 
+// Create and start a hub.
 // owner: GitHub name shown on the phone for every agent on this hub.
 // token: optional fixed session token (ASHR_TOKEN). announce(code, url): called when a pair code is issued.
+// Options: port, fixed token, how long to hold a request waiting for the phone, host, a pair announce function, a base URL function and the owner name. Returns a promise with the server, state, port and a close function.
 export function startHub({ port = 7777, token = '', holdMs = 110_000, host = '0.0.0.0', announce = () => {}, baseUrl = null, owner = 'unknown' } = {}) {
+  // Build the shared context (state, tmux, auth) that every route handler receives.
   const auth = createAuth({ fixedToken: token });
   const ctx = { state: createState({ holdMs, owner }), tmux, auth, port, announce, baseUrl };
+  // The table of POST routes: /hook/* for agents on this computer, /api/* for the phone.
   const POST = { '/hook/permission': routes.hookPermission, '/hook/event': routes.hookEvent, '/hook/fake': routes.hookFake,
     '/hook/pair-code': routes.hookPairCode,
     '/hook/agent-token': routes.hookAgentToken,
@@ -115,6 +125,7 @@ export function startHub({ port = 7777, token = '', holdMs = 110_000, host = '0.
     '/api/decide': routes.apiDecide, '/api/say': routes.apiSay, '/api/kill': routes.apiKill,
     '/api/explain': routes.apiExplain };
 
+  // The request handler. Hook paths must be local and JSON; API paths need a token (except pairing); other GET requests serve the app files.
   const server = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, 'http://hub');
@@ -129,8 +140,10 @@ export function startHub({ port = 7777, token = '', holdMs = 110_000, host = '0.
       } else if (req.method === 'GET') {
         return serveStatic(res, p);
       }
+      // Two GET endpoints: a state snapshot and the live stream. Anything else must be a known POST route.
       if (req.method === 'GET' && p === '/api/state') return send(res, 200, ctx.state.snapshot());
       if (req.method === 'GET' && p === '/api/stream') return openStream(ctx, req, res);
+      // Read the JSON body, run the handler and send its reply. Any crash becomes a plain 500 error.
       const handler = req.method === 'POST' && POST[p];
       if (!handler) return send(res, 404, { error: 'not found' });
       let body;
@@ -143,12 +156,14 @@ export function startHub({ port = 7777, token = '', holdMs = 110_000, host = '0.
     }
   });
 
+  // Listen and resolve with the running hub; close() ends the streams and the server.
   return new Promise((resolve) => {
     server.listen(port, host, () => resolve({ server, ctx, token: token || undefined, port: server.address().port,
       close: () => { for (const r of ctx.state.clients) r.end(); server.closeAllConnections(); return new Promise((r) => server.close(r)); } }));
   });
 }
 
+// Find this computer's first non-internal IPv4 address so a phone on the same Wi-Fi can reach it.
 function lanIp() {
   for (const list of Object.values(os.networkInterfaces())) {
     for (const i of list ?? []) if (i.family === 'IPv4' && !i.internal) return i.address;
@@ -156,14 +171,17 @@ function lanIp() {
   return '127.0.0.1';
 }
 
+// The address to put in the pairing link: ASHR_PUBLIC_URL if set, otherwise the LAN address and port.
 const publicBase = (port) => (process.env.ASHR_PUBLIC_URL || `http://${lanIp()}:${port}`).replace(/\/$/, '');
 
+// Print the pairing link and, if qrencode is installed, a QR code in the terminal.
 function printPairUrl(url) {
   console.log(`\nPair your phone (one time, 10 min): ${url}\n`);
   try { console.log(execFileSync('qrencode', ['-t', 'ansiutf8', url], { encoding: 'utf8', timeout: 3000 })); }
   catch { console.log('(install qrencode for a terminal QR code)'); }
 }
 
+// When this file is run directly: start the hub on PORT, print the pairing link (unless a script prints its own) and the port.
 if (import.meta.main) {
   const port = Number(process.env.PORT) || 7777;
   const hub = await startHub({ port, owner: resolveOwner(), token: process.env.ASHR_TOKEN || '',

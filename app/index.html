@@ -1,34 +1,49 @@
 <!doctype html>
+<!--
+  Program: ashr - index.html
+  Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+  Last Modified: 2026-11-18
+  Purpose: The single page of the phone app: top bar, agent row, request-card stack with round buttons, guard log, and the chat, deny, redirect and change dialogs.
+-->
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <!-- Make the page fit a phone screen and use the full screen on notched phones. -->
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#050806" />
+  <!-- Settings that let the page be added to an iPhone home screen as an app. -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>ashr</title>
   <meta name="description" content="ashr - Mobile triage controller for coding agents" />
+  <!-- Links to the app manifest, icon and the two style sheets. -->
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="ai-explain.css" />
 </head>
 <body>
+  <!-- Top bar: brand name and a connection status label that app.js updates. -->
   <header class="top">
     <div class="brand"><img src="icon.svg" alt="" width="26" height="26" /> ashr</div>
     <div id="conn" class="conn" data-state="connecting" role="status" aria-live="polite">connecting</div>
   </header>
 
+  <!-- The row of agent tiles, filled by app.js. -->
   <section id="herd" class="herd" aria-label="Your agents"></section>
 
+  <!-- Main content: counter, card stack, buttons and log. -->
   <main>
+    <!-- The big count of requests waiting for you. -->
     <section class="hero">
       <div><span id="count" class="count">0</span> <span id="count-word" class="count-word">need you</span></div>
       <div id="count-sub" class="muted small">all quiet</div>
     </section>
 
+    <!-- Where the swipeable cards are placed. -->
     <section id="stack" class="stack" aria-live="polite"></section>
 
+    <!-- The three round buttons: deny, redirect and allow. -->
     <div id="decide" class="decide">
       <button id="btn-deny" class="round deny" aria-label="Deny">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>
@@ -40,12 +55,15 @@
         <svg viewBox="0 0 24 24" aria-hidden="true" title="Allow"><path d="M12 2a1.8 1.8 0 1 0 0 3.6 1.8 1.8 0 0 0 0-3.6zm0 4.2c-1 3.5-3.8 8.8-8 13.8 3.5 1.5 12.5 1.5 16 0-4.2-5-7-10.3-8-13.8zm0 4.5c.8 2.2 2.2 5.2 4.4 7.6-2.8.8-6 0-8.8 0 2.2-2.4 3.6-5.4 4.4-7.6z" fill="currentColor"/><path d="M7 21.5h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
       </button>
     </div>
+    <!-- A one-line reminder of the swipe directions. -->
     <div id="hint" class="hint">swipe right to allow · left to deny · bubble to redirect</div>
 
+    <!-- The guard log lists what the guard allowed or denied recently. -->
     <h2 class="section-title">guard log</h2>
     <section id="log" class="log"></section>
   </main>
 
+  <!-- Chat dialog for one agent: send it a message or stop it. -->
   <dialog id="sheet" class="sheet">
     <form method="dialog" class="sheet-inner chat" id="sheet-form">
       <div class="chat-head">
@@ -71,6 +89,7 @@
     </form>
   </dialog>
 
+  <!-- Dialog to give a reason for denying, using quick chips or free text. -->
   <dialog id="deny-sheet" class="sheet">
     <form method="dialog" class="sheet-inner">
       <strong class="sheet-q">Why deny?</strong>
@@ -88,6 +107,7 @@
     </form>
   </dialog>
 
+  <!-- Dialog to tell the agent what to do instead. -->
   <dialog id="redo-sheet" class="sheet">
     <form method="dialog" class="sheet-inner">
       <strong class="sheet-q">Tell it what to do instead</strong>
@@ -110,6 +130,7 @@
     </form>
   </dialog>
 
+  <!-- Dialog that shows the exact change a request would make. -->
   <dialog id="diff-sheet" class="sheet">
     <form method="dialog" class="sheet-inner">
       <strong class="sheet-q">The change</strong>
@@ -118,8 +139,10 @@
     </form>
   </dialog>
 
+  <!-- Small message bar used for feedback. -->
   <div id="toast" class="toast" role="status"></div>
 
+  <!-- Load the app code as an ES module. -->
   <script type="module" src="app.js"></script>
 </body>
 </html>

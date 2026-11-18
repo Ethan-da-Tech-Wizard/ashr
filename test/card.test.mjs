@@ -1,7 +1,13 @@
+// Program: ashr - card.test.mjs
+// Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+// Last Modified: 2026-11-18
+// Purpose: Tests cardHtml in app/card.js: content, the See change button, HTML escaping and handling of bad input.
+// Test tools and the function under test.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { cardHtml } from '../app/card.js';
 
+// The card shows agent, owner, risk and headline.
 test('cardHtml renders card with agent, owner, risk and headline', () => {
   const ask = {
     id: 'ask_1',
@@ -26,6 +32,7 @@ test('cardHtml renders card with agent, owner, risk and headline', () => {
   assert.match(html, /waiting/);
 });
 
+// The See change button appears only when the detail differs from the summary.
 test('cardHtml includes "See change" button when detail differs from summary', () => {
   const askWithDiff = {
     tool: 'Edit',
@@ -47,6 +54,7 @@ test('cardHtml includes "See change" button when detail differs from summary', (
   assert.doesNotMatch(htmlNoDiff, /data-act="diff"/);
 });
 
+// Text containing HTML must be escaped so it cannot inject markup.
 test('cardHtml escapes HTML in inputs to prevent XSS injection', () => {
   const maliciousAsk = {
     tool: 'Bash',
@@ -69,6 +77,7 @@ test('cardHtml escapes HTML in inputs to prevent XSS injection', () => {
   assert.match(html, /&lt;img onerror=x&gt;/);
 });
 
+// Missing or malformed inputs must not throw.
 test('cardHtml handles null, undefined and malformed inputs gracefully without throwing', () => {
   assert.doesNotThrow(() => cardHtml(null, null, null));
   assert.doesNotThrow(() => cardHtml(undefined, undefined, undefined));

@@ -1,3 +1,10 @@
+/*
+   Program: ashr - styles.css
+   Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+   Last Modified: 2026-11-18
+   Purpose: All styling for the phone app: colour variables, layout, agent tiles, the card stack, buttons, dialogs and the allow, deny and redirect animations.
+*/
+/* Colour, size and font variables used everywhere below. Change a value here and the whole app follows. */
 :root {
   --bg: #050806;
   --surface: #0d130f;
@@ -17,6 +24,7 @@
   --sans: "Inter Tight", "SF Pro Display", system-ui, -apple-system, sans-serif;
 }
 
+/* Basic page setup: sizing rules, dark background, base font and a phone-width column in the middle of the screen. */
 * { box-sizing: border-box; }
 html { overscroll-behavior-y: none; }
 html, body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); -webkit-font-smoothing: antialiased; }
@@ -25,6 +33,7 @@ body { padding: env(safe-area-inset-top) 0 calc(env(safe-area-inset-bottom) + 40
   overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }
 main { padding: 0 20px; }
 button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+/* Small helper classes for quiet text, small text and monospace text. */
 .muted { color: var(--muted); }
 .small { font-size: 13px; }
 .mono { font-family: var(--mono); }
@@ -34,6 +43,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
 .brand { display: flex; gap: 9px; align-items: center; font-weight: 800; letter-spacing: -0.03em; font-size: 21px; }
 .brand img { border-radius: 9px; }
 .conn { font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 99px; background: var(--surface); border: 1px solid var(--line); color: var(--muted); }
+/* The connection label changes colour by state: live (green), offline (red), demo (blue-grey). */
 .conn[data-state="live"] { color: var(--ember); border-color: rgba(140, 255, 50, 0.35); }
 .conn[data-state="live"]::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: var(--ember); vertical-align: 1px; box-shadow: 0 0 8px var(--ember); }
 .conn[data-state="offline"] { color: var(--rust); border-color: rgba(255, 77, 77, 0.4); }
@@ -43,6 +53,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
 .herd { display: flex; gap: 12px; overflow-x: auto; padding: 12px 20px 6px; scrollbar-width: none; }
 .herd::-webkit-scrollbar { display: none; }
 .agent { flex: none; width: 88px; border: 0; background: none; padding: 0; text-align: center; }
+/* An agent tile: a rounded square whose gradient colour shows which agent it is (claude, codex, gemini or grok). */
 .tile { position: relative; display: grid; place-items: center; width: 60px; height: 60px; margin: 0 auto; border-radius: 19px;
   background: linear-gradient(180deg, #8d93a0, #4d525e);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 10px 20px -12px #000; transition: filter 0.3s; }
@@ -51,15 +62,18 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
 .tile.gemini { background: linear-gradient(180deg, #ff4fa3, #ff3b6b); }
 .tile.grok { background: linear-gradient(180deg, #d2d4dc, #7d808d); }
 .tile .mark { width: 46px; height: 46px; }
+/* Tile styles by state: needs_you glows and pulses, done and idle are dimmed, failed and signed_out get a red ring. */
 .agent.needs_you .tile { animation: ring 1.6s infinite;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 0 0 3px var(--bg), 0 0 0 5px var(--ember), 0 0 20px 2px rgba(140, 255, 50, 0.5); }
 .agent.done .tile, .agent.idle .tile { filter: saturate(0.35) brightness(0.75); }
 .agent.failed .tile, .agent.signed_out .tile { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 0 0 3px var(--bg), 0 0 0 5px var(--rust); }
+/* The small dot on the tile corner, coloured by state. */
 .tile .pip { position: absolute; top: -2px; right: -2px; width: 12px; height: 12px; border-radius: 50%; border: 2.5px solid var(--bg); background: var(--muted); }
 .agent.needs_you .pip { background: var(--ember); }
 .agent.working .pip { background: var(--field); }
 .agent.done .pip { background: #ffffff; }
 .agent.failed .pip, .agent.signed_out .pip { background: var(--rust); }
+/* The owner's round photo in the tile corner; the first letter shows if the photo is missing. */
 .tile .face { position: absolute; right: -6px; bottom: -6px; width: 24px; height: 24px; border-radius: 50%; overflow: hidden;
   border: 2.5px solid var(--bg); background: var(--soft); display: grid; place-items: center; }
 .tile .face::before { content: attr(data-initial); font-size: 11px; font-weight: 800; color: var(--ember); }
@@ -68,6 +82,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
 .agent .by { display: block; margin-top: 1px; font-size: 11.5px; font-weight: 700; color: var(--ember); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .agent .st { display: block; margin-top: 1px; font-size: 10.5px; color: var(--muted); white-space: nowrap; }
 @keyframes ring { 50% { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 0 0 3px var(--bg), 0 0 0 5px var(--ember), 0 0 30px 6px rgba(140, 255, 50, 0.8); } }
+/* A smaller version of the tile used in the chat dialog header. */
 .tile-holder .tile { width: 42px; height: 42px; border-radius: 14px; }
 .tile-holder .tile .mark { width: 32px; height: 32px; }
 .tile-holder .tile .pip { display: none; }
@@ -75,15 +90,18 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
 .empty { color: var(--muted); font-size: 14px; padding: 14px 2px; }
 .herd .empty { padding: 18px 0 6px; }
 
+/* The big counter of waiting requests. */
 .hero { display: flex; justify-content: space-between; align-items: baseline; padding: 14px 4px 14px; }
 .count { font-size: 30px; font-weight: 800; letter-spacing: -0.04em; color: var(--ember); font-variant-numeric: tabular-nums; text-shadow: 0 0 18px rgba(140, 255, 50, 0.5); }
 .count.zero { color: var(--muted); text-shadow: none; }
 .count-word { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
 
 /* the card stack */
+/* The card stack area; when empty it shows a dashed "All quiet" box. */
 .stack { position: relative; height: min(480px, 60vh); margin: 0 6px; }
 .stack:empty { height: 180px; display: grid; place-content: center; text-align: center; border-radius: var(--radius); border: 2px dashed var(--line); color: var(--muted); }
 .stack:empty::before { content: "All quiet.\A Safe commands pass on their own."; white-space: pre-line; font-size: 15px; line-height: 1.5; }
+/* One request card: absolutely positioned so cards pile up, with a swipe-friendly touch rule and a smooth transition. */
 .card {
   --panel: #151916;
   position: absolute; inset: 0; border-radius: 36px; border: 7px solid #000; background: #000; color: var(--ink);
@@ -98,10 +116,12 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
                     repeating-linear-gradient(-45deg, rgba(140, 255, 50, 0.08) 0px, rgba(140, 255, 50, 0.08) 3px, transparent 3px, transparent 9px);
   pointer-events: none; z-index: 3; opacity: 0.7;
 }
+/* High-risk cards glow red instead of green. */
 .card.high { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.09), 0 26px 50px -22px rgba(255, 77, 77, 0.55); }
 /* The panel inside the card scrolls, and a scroll area ignores its parents' touch rules.
    So say it on every part of the card: up and down may scroll, sideways is ours to swipe. */
 .card * { touch-action: pan-y; }
+/* Stack depth: the top card is flat; the next ones are tilted, smaller and fainter; the fourth is hidden. */
 .card[data-depth="0"] { z-index: 3; }
 .card[data-depth="1"] { z-index: 2; transform: translate(-14px, 10px) rotate(-4deg) scale(0.96); pointer-events: none; }
 .card[data-depth="2"] { z-index: 1; transform: translate(14px, 18px) rotate(4deg) scale(0.92); pointer-events: none; opacity: 0.8; }
@@ -109,6 +129,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
 .card[data-depth="1"] > *, .card[data-depth="2"] > * { opacity: 0.4; }
 .card[data-leaving] { z-index: 10; }
 .card.dragging { transition: none; }
+/* While swiping: a coloured wash and a rotated ALLOW or DENY stamp fade in. */
 .card .wash { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; z-index: 4; }
 .card .wash.allow { background: linear-gradient(90deg, transparent, rgba(140, 255, 50, 0.3)); }
 .card .wash.deny { background: linear-gradient(270deg, transparent, rgba(255, 77, 77, 0.35)); }
@@ -117,6 +138,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
 .card .stamp.deny { left: 20px; color: var(--rust); transform: rotate(-8deg); }
 
 /* blurred art behind the folder */
+/* The coloured blurry picture at the top of a card. */
 .art { position: absolute; inset: 0 0 46% 0; border-radius: 28px 28px 0 0; overflow: hidden; background: #0b2912; }
 .art i { position: absolute; inset: -30%; filter: blur(22px) saturate(1.35);
   background:
@@ -135,6 +157,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
 .art-tag span { display: block; font-size: 13px; opacity: 0.9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* the folder panel */
+/* The dark folder panel at the bottom of a card; it grows when the drawer is open. */
 .panel { position: absolute; left: 0; right: 0; bottom: 0; height: 68%; background: var(--panel); border-radius: 0 26px 28px 28px;
   display: flex; flex-direction: column; padding: 4px 18px 16px; transition: height 0.32s cubic-bezier(0.2, 0.8, 0.2, 1); z-index: 2; }
 .card.open .panel { height: 88%; }
@@ -144,12 +167,14 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
   display: flex; align-items: center; padding-left: 16px; }
 .tab-cap { position: absolute; left: calc(100% - 1px); top: 0; width: 58px; height: 41px; fill: var(--panel); }
 .tab .risk { position: relative; z-index: 1; }
+/* The risk pill (high, medium, low) in the folder tab. */
 .risk { font-size: 11px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; padding: 6px 11px; border-radius: 99px; background: rgba(140, 255, 50, 0.12); white-space: nowrap; }
 .risk.high { background: var(--rust); color: #fff; }
 .risk.medium { color: var(--amber); background: rgba(255, 176, 32, 0.14); }
 .risk.low { color: var(--ember); }
 .panel-body { flex: 1; min-height: 0; overflow-y: auto; padding-top: 10px; scrollbar-width: none; }
 .panel-body::-webkit-scrollbar { display: none; }
+/* The plain-English headline, the exact command and the hidden drawer. */
 .plain { margin: 0; font-size: 23px; line-height: 1.18; font-weight: 700; letter-spacing: -0.02em; overflow-wrap: anywhere; }
 .plain.long { font-size: 19px; }
 .raw { display: block; margin-top: 8px; font-family: var(--mono); font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
@@ -159,17 +184,20 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
 .points li { position: relative; padding-left: 18px; }
 .points li::before { content: ""; position: absolute; left: 2px; top: 7px; width: 6px; height: 6px; border-radius: 50%; background: var(--ember); }
 .card.high .points li::before { background: var(--rust); }
+/* Card footer: the waiting timer and the buttons. */
 .foot { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; padding-top: 10px; }
 .wait { display: flex; align-items: baseline; gap: 7px; }
 .waiting { font-size: 38px; line-height: 1; font-weight: 700; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
 .wait-word { font-size: 15px; color: var(--muted); }
 .foot-btns { display: flex; gap: 8px; }
+/* Rounded text buttons used on the card. */
 .pill { border: 0; border-radius: 99px; padding: 10px 15px; font-size: 14px; font-weight: 700; white-space: nowrap; }
 .pill.why { background: var(--ink); color: var(--bg); }
 .pill.ghost { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.18); }
 .pill:active { transform: scale(0.96); }
 
 /* the round buttons under the stack */
+/* The round deny, redirect and allow buttons under the stack. */
 .decide { display: flex; justify-content: center; align-items: center; gap: 20px; margin: 30px 0 10px; }
 .decide.hidden, .hint.hidden { display: none; }
 .round { width: 66px; height: 66px; border-radius: 50%; border: 0; display: grid; place-items: center; transition: transform 0.15s; }
@@ -181,16 +209,19 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
 .round:active { transform: scale(0.9); }
 .hint { text-align: center; font-size: 12px; color: var(--muted); margin: 0 0 28px; }
 
+/* Rectangular buttons used in the dialogs. */
 .btn { border: 0; border-radius: 18px; padding: 15px 16px; font-weight: 700; font-size: 16px; background: var(--soft); color: var(--ink); }
 .btn.allow { background: var(--ember); color: var(--on-accent); }
 .btn.deny { background: var(--rust); color: #fff; }
 .btn.ghost { background: transparent; border: 1.5px solid var(--line); color: var(--ink); }
 .btn:active { transform: scale(0.98); }
 
+/* Small heading text. */
 .section-title { font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin: 8px 4px 10px; }
 
 /* guard log */
 .log { display: grid; gap: 8px; }
+/* One row of the guard log: time, command text and a verdict pill. */
 .entry { display: grid; grid-template-columns: 44px 1fr auto; gap: 10px; align-items: center; font-size: 13px; padding: 12px 14px; border-radius: 18px; background: var(--surface); border: 1px solid var(--line); }
 .entry .when { color: var(--muted); font-variant-numeric: tabular-nums; }
 .entry .what { font-family: var(--mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -199,11 +230,13 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
 .verdict.deny, .verdict.timeout { color: var(--rust); background: rgba(255, 77, 77, 0.14); }
 
 /* sheets */
+/* Dialogs slide up from the bottom as sheets over a blurred backdrop. */
 .sheet { border: 0; padding: 0; background: transparent; width: 100%; max-width: 520px; margin: auto auto 0; color: var(--ink); }
 .sheet::backdrop { background: rgba(0, 0, 0, 0.6); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
 .sheet-inner { background: var(--surface); border: 1px solid var(--line); border-bottom: 0; border-radius: 30px 30px 0 0; padding: 22px 20px calc(env(safe-area-inset-bottom) + 20px); display: grid; gap: 14px; }
 .sheet-q { font-size: 20px; letter-spacing: -0.02em; }
 .sheet-sub { margin: -8px 0 0; font-size: 14px; color: var(--muted); }
+/* Text boxes, reason chips and the change viewer used in the sheets. */
 textarea { width: 100%; background: var(--soft); color: var(--ink); border: 0; border-radius: 18px; padding: 13px 14px; font: 16px var(--sans); resize: none; }
 textarea::placeholder { color: var(--muted); }
 textarea:focus { outline: 2px solid rgba(140, 255, 50, 0.5); }
@@ -212,9 +245,11 @@ textarea:focus { outline: 2px solid rgba(140, 255, 50, 0.5); }
 .chip { border: 1px solid var(--line); background: var(--soft); color: var(--ink); border-radius: 99px; padding: 9px 14px; font-size: 14px; font-weight: 500; }
 .chip.on { background: var(--ember); border-color: var(--ember); color: var(--on-accent); }
 .diff-pre { font-family: var(--mono); font-size: 12px; line-height: 1.5; overflow: auto; max-height: 50vh; background: var(--soft); border-radius: 16px; padding: 14px; margin: 0; }
+/* Colours for added and removed lines in the change viewer. */
 .add { color: var(--ember); } .del { color: var(--rust); }
 
 /* talk sheet, styled like a chat */
+/* The chat dialog: header, a message bubble and the composer row with mic and send buttons. */
 .chat { min-height: 62vh; grid-template-rows: auto 1fr auto; padding-top: 14px;
   background: radial-gradient(80% 40% at 80% 30%, rgba(140, 255, 50, 0.08), transparent), var(--surface); }
 .chat-head { display: flex; align-items: center; gap: 10px; }
@@ -233,18 +268,22 @@ textarea:focus { outline: 2px solid rgba(140, 255, 50, 0.5); }
 .send-btn svg { width: 19px; height: 19px; }
 #mic.listening, #redo-mic.listening { background: var(--ember); color: var(--on-accent); }
 
+/* The small message that fades in at the bottom. */
 .toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 24px); transform: translate(-50%, 20px); opacity: 0; background: var(--ink); color: var(--bg); padding: 11px 18px; border-radius: 99px; font-weight: 600; font-size: 14px; transition: 0.25s; pointer-events: none; z-index: 60; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
+/* The full-screen "not paired" notice. */
 .unpaired { position: fixed; inset: 0; z-index: 50; background: radial-gradient(120% 60% at 50% 0%, rgba(140, 255, 50, 0.16), var(--bg) 70%); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 32px; text-align: center; }
 .unpaired img { margin-bottom: 14px; border-radius: 16px; box-shadow: var(--shadow); }
 .unpaired .big { font-size: 52px; line-height: 0.95; font-weight: 800; letter-spacing: -0.05em; color: var(--ember); }
 .unpaired .sub { color: var(--muted); font-size: 17px; max-width: 280px; }
 
 /* ---------- fire effects (fx.js) ---------- */
+/* Animations start here: the card clips its content so effects stay inside. */
 .card { overflow: hidden; isolation: isolate; }
 
 /* Allow: flame seal stamps down, card glows, then glides right */
+/* Allow effect: the result tile stamps down in the middle, the card glows, then glides to the right. */
 .seal-mark { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 6px;
   color: var(--ember); z-index: 3; pointer-events: none; }
 .seal-mark svg { width: 170px; height: 170px; filter: drop-shadow(0 10px 26px rgba(0, 0, 0, 0.55));
@@ -256,11 +295,13 @@ textarea:focus { outline: 2px solid rgba(140, 255, 50, 0.5); }
 .card.sealing > :not(.seal-mark):not(.wash):not(.stamp),
 .card.shrugging > :not(.seal-mark):not(.wash):not(.stamp),
 .card.burning > :not(.seal-mark):not(.wash):not(.stamp):not(.slash):not(.embers) { animation: dim 0.25s 0.1s forwards; }
+/* Deny and redirect variants of the stamp, with a shake for deny. */
 .seal-mark.deny { color: var(--rust); z-index: 5; }
 .seal-mark.neutral { color: var(--ink); }
 .seal-mark.deny svg { animation: seal-stamp 0.42s cubic-bezier(0.2, 1.6, 0.4, 1) both, face-shake 0.4s 0.42s; }
 .card.shrugging { box-shadow: 0 0 0 3px #aab6bc, 0 0 50px rgba(170, 182, 188, 0.35);
   animation: shrug-leave 0.45s 0.65s cubic-bezier(0.5, 0, 0.75, 0) forwards; }
+/* Keyframes are the steps of each animation: shake, lift away, stamp in, fade up, dim and glide off. */
 @keyframes face-shake { 20% { transform: rotate(-9deg); } 50% { transform: rotate(8deg); } 80% { transform: rotate(-5deg); } }
 @keyframes shrug-leave { to { transform: translateY(-70px) scale(0.94); opacity: 0; } }
 @keyframes seal-stamp { 0% { transform: scale(2.4) rotate(-25deg); opacity: 0; } 100% { transform: scale(1) rotate(0); opacity: 1; } }
@@ -269,6 +310,7 @@ textarea:focus { outline: 2px solid rgba(140, 255, 50, 0.5); }
 @keyframes seal-leave { to { transform: translateX(115%) rotate(5deg); opacity: 0; } }
 
 /* Deny: a white-hot slash cuts across, then the card burns up into embers */
+/* Deny effect: a hot slash line cuts across, the card heats up, shakes and burns away with rising embers. */
 .slash { position: absolute; left: -20%; top: 50%; width: 140%; height: 7px; z-index: 3; pointer-events: none;
   transform: rotate(-14deg) scaleX(0); transform-origin: left center; border-radius: 99px;
   background: linear-gradient(90deg, transparent, var(--rust) 15%, var(--amber) 45%, #fff6e0 55%, var(--amber) 65%, var(--rust) 85%, transparent);
@@ -281,10 +323,12 @@ textarea:focus { outline: 2px solid rgba(140, 255, 50, 0.5); }
 .embers { position: absolute; inset: 0; z-index: 4; pointer-events: none; overflow: visible; }
 .embers i { position: absolute; width: 4px; height: 4px; border-radius: 50%; background: var(--amber);
   box-shadow: 0 0 6px 2px rgba(255, 150, 40, 0.8); opacity: 0; animation: ember-rise 0.8s ease-out both; }
+/* Keyframes for the slash, heat, shake and ember animations. */
 @keyframes slash-cut { to { transform: rotate(-14deg) scaleX(1); } }
 @keyframes slash-fade { to { opacity: 0; } }
 @keyframes heat { to { opacity: 1; } }
 @keyframes burn-shake { 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
+/* The burn-away uses a mask that slides up so the card disappears from the bottom. */
 /* soft burning edge: a gradient mask slides up so the card burns away from the bottom */
 .card.burning { -webkit-mask-image: linear-gradient(to bottom, #000 0 44%, transparent 56% 100%);
   mask-image: linear-gradient(to bottom, #000 0 44%, transparent 56% 100%);
@@ -296,4 +340,5 @@ textarea:focus { outline: 2px solid rgba(140, 255, 50, 0.5); }
   0% { opacity: 0; transform: translate(0, 0) scale(1); }
   15% { opacity: 1; }
   100% { opacity: 0; transform: translate(var(--drift), -90px) scale(0.3); } }
+/* For people who prefer less motion, turn animations off and just fade. */
 @media (prefers-reduced-motion: reduce) { .card, .card * { animation: none !important; transition: opacity 0.2s !important; } }

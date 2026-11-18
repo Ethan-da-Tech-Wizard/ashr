@@ -1,8 +1,14 @@
+// Program: ashr - agent-tokens.test.mjs
+// Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+// Last Modified: 2026-11-18
+// Purpose: Tests the scoped, short-lived agent tokens: isolation between agents, expiry after the time limit, and the hub's issue and revoke endpoints.
+// test runner, assertions, the auth store and the hub starter.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createAuth } from '../hub/auth.mjs';
 import { startHub } from '../hub/server.mjs';
 
+// Checks that a token only works for its own agent and capabilities.
 test('ephemeral per-agent tokens are isolated and scoped', () => {
   const auth = createAuth();
   const t1 = auth.issueAgentToken({ agentId: 'claude-agent', role: 'worker' });
@@ -26,6 +32,7 @@ test('ephemeral per-agent tokens are isolated and scoped', () => {
   assert.equal(auth.valid(t2.token), true);
 });
 
+// Checks that a token stops working after its time limit.
 test('ephemeral per-agent tokens expire after TTL', async () => {
   const auth = createAuth();
   const { token } = auth.issueAgentToken({ agentId: 'quick-agent', ttlMs: 25 });
@@ -35,6 +42,7 @@ test('ephemeral per-agent tokens expire after TTL', async () => {
   assert.equal(auth.valid(token), false);
 });
 
+// Starts a real hub and checks issuing, using and revoking tokens over HTTP.
 test('hub endpoints: /hook/agent-token issues, validates, and revokes tokens', async () => {
   const hub = await startHub({ port: 0, host: '127.0.0.1', holdMs: 300 });
   const base = `http://127.0.0.1:${hub.port}`;

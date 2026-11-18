@@ -1,8 +1,14 @@
+// Program: ashr - ai-explain.test.mjs
+// Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+// Last Modified: 2026-11-18
+// Purpose: Tests the AI explanation helper (Gemini and Grok request format, offline fallback, simulated text) and the hub's /api/explain route, all with mock network calls.
+// Test tools, the helper under test and the hub starter.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { requestAiExplanation, simulateExplanation } from '../hub/ai-explain.mjs';
 import { startHub } from '../hub/server.mjs';
 
+// Uses a fake fetch function to check the request sent to Gemini and how its answer is read.
 test('Gemini request formatting with mock fetch', async () => {
   let capturedUrl = null;
   let capturedOptions = null;
@@ -55,6 +61,7 @@ test('Gemini request formatting with mock fetch', async () => {
   assert.match(promptText, /high/);
 });
 
+// Same check for Grok.
 test('Grok request formatting with mock fetch', async () => {
   let capturedUrl = null;
   let capturedOptions = null;
@@ -105,6 +112,7 @@ test('Grok request formatting with mock fetch', async () => {
   assert.match(payload.messages[1].content, /rm -rf node_modules/);
 });
 
+// With no key or a failing call, the helper must return a simulated explanation.
 test('Fallback when no key is set or offline/error', async () => {
   const ask = { tool: 'Bash', summary: 'cat .env', risk: 'high' };
 
@@ -157,6 +165,7 @@ test('Fallback when no key is set or offline/error', async () => {
   assert.equal(http500.provider, 'grok');
 });
 
+// The simulated text has specific wording for key actions.
 test('simulateExplanation provides specialized descriptions for key actions', () => {
   assert.match(simulateExplanation({ summary: 'rm -rf build' }), /permanently deletes/i);
   assert.match(simulateExplanation({ summary: 'npm install framer-motion' }), /downloads and installs/i);
@@ -164,24 +173,29 @@ test('simulateExplanation provides specialized descriptions for key actions', ()
   assert.match(simulateExplanation({ summary: 'cat .env' }), /secret environment/i);
 });
 
+// Route tests: start a hub with a known token and call it over HTTP.
 // Route tests
+// hub is the running hub, base its web address.
 let hub, base;
 const TOKEN = 'test-ai-token';
 const authHeaders = { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' };
 const post = (path, body, headers = authHeaders) =>
   fetch(base + path, { method: 'POST', headers, body: JSON.stringify(body) });
 
+// Start the hub before the tests and stop it after.
 before(async () => {
   hub = await startHub({ port: 0, token: TOKEN, host: '127.0.0.1', holdMs: 2000 });
   base = `http://127.0.0.1:${hub.port}`;
 });
 after(() => hub.close());
 
+// The route needs the token.
 test('route POST /api/explain requires authorization token', async () => {
   const unauth = await post('/api/explain', { askId: 'any', provider: 'gemini' }, { 'Content-Type': 'application/json' });
   assert.equal(unauth.status, 401);
 });
 
+// Bad inputs are rejected.
 test('route POST /api/explain validates inputs', async () => {
   // Missing askId
   const noAskId = await post('/api/explain', { provider: 'gemini' });
@@ -199,6 +213,7 @@ test('route POST /api/explain validates inputs', async () => {
   assert.equal((await notFound.json()).error, 'expired');
 });
 
+// An existing ask is explained.
 test('route POST /api/explain handles active asks successfully', async () => {
   const ask = hub.ctx.state.addAsk({
     tool: 'Bash',
@@ -226,6 +241,7 @@ test('route POST /api/explain handles active asks successfully', async () => {
   assert.ok(grokBody.explanation.length > 0);
 });
 
+// If the ask is gone, details in the request body are used.
 test('route POST /api/explain handles fallback with ask summary in body', async () => {
   const res = await post('/api/explain', {
     askId: 'ask_adhoc',

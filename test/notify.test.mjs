@@ -1,17 +1,25 @@
+// Program: ashr - notify.test.mjs
+// Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+// Last Modified: 2026-11-18
+// Purpose: Tests notifyAsk: no topic, low risk, medium and high risk posts to ntfy with the right headers, and network failures.
+// Test tools and the function under test.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { notifyAsk } from '../hub/notify.mjs';
 
+// With no topic nothing is sent.
 test('notifyAsk ignores calls without a topic', async () => {
   const ok = await notifyAsk({ risk: 'high', summary: 'rm -rf' }, '');
   assert.equal(ok, false);
 });
 
+// Low-risk asks are not sent.
 test('notifyAsk ignores low risk asks', async () => {
   const ok = await notifyAsk({ risk: 'low', summary: 'cat file' }, 'my-test-topic');
   assert.equal(ok, false);
 });
 
+// Medium risk goes out with default priority.
 test('notifyAsk posts medium risk asks to ntfy with default priority', async () => {
   let calledUrl, calledOpts;
   const mockFetch = async (url, opts) => {
@@ -33,6 +41,7 @@ test('notifyAsk posts medium risk asks to ntfy with default priority', async () 
   assert.match(calledOpts.body, /network install/);
 });
 
+// High risk goes out with high priority and a warning tag.
 test('notifyAsk posts high risk asks to ntfy with high priority and warning tag', async () => {
   let calledUrl, calledOpts;
   const mockFetch = async (url, opts) => {
@@ -51,6 +60,7 @@ test('notifyAsk posts high risk asks to ntfy with high priority and warning tag'
   assert.match(calledOpts.headers.Title, /HIGH risk/);
 });
 
+// A failing network call returns false instead of throwing.
 test('notifyAsk handles network fetch errors without throwing', async () => {
   const failingFetch = async () => {
     throw new Error('network down');

@@ -1,17 +1,25 @@
 #!/usr/bin/env node
+// Program: ashr - ashr-exec.mjs
+// Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+// Last Modified: 2026-11-18
+// Purpose: Command-line runner that asks the ashr hub for permission before running any command, then runs it only if the phone user allows it.
 // ashr runner: execute any command under ashr's protective guard.
 // Usage: node scripts/ashr-exec.mjs [--agent gemini|codex|claude] [--title "Task"] <command> [args...]
 // Example: node scripts/ashr-exec.mjs --agent gemini rm -rf ./tmp
+// HTTP client, process spawning and path helpers.
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 
+// Start with the command-line arguments after "node script.js".
 const args = process.argv.slice(2);
+// Settings come from environment variables first: agent name, title, hub port and an optional agent token.
 let agent = process.env.ASHR_AGENT || 'gemini';
 let title = process.env.ASHR_TITLE || '';
 let port = Number(process.env.PORT) || 7777;
 let token = process.env.ASHR_AGENT_TOKEN || '';
 
+// Read the leading options (--agent, --title, --port, --token) and remove them from args; what is left is the command to run.
 while (args.length > 0) {
   if (args[0] === '--agent' && args[1]) {
     agent = args[1];
@@ -30,16 +38,19 @@ while (args.length > 0) {
   }
 }
 
+// No command given: print how to use the script and exit with an error.
 if (args.length === 0) {
   console.error('Usage: ashr-exec [--agent gemini|codex|claude] [--title "Task"] [--token <token>] <command> [args...]');
   process.exit(1);
 }
 
+// Build the display text of the command, a session id and the working folder; the title defaults to the folder name.
 const command = args.join(' ');
 const sessionId = process.env.ASHR_SESSION_ID || `${agent}-${process.ppid || process.pid}`;
 const cwd = process.cwd();
 if (!title) title = path.basename(cwd);
 
+// Get a token for the hub: use the given one, or (if ASHR_AUTO_TOKEN is 1) ask the hub to issue a worker token. Returns "" if none.
 async function obtainToken() {
   if (token) return token;
   if (process.env.ASHR_AUTO_TOKEN === '1') {
@@ -74,6 +85,7 @@ async function obtainToken() {
   return '';
 }
 
+// Send the command to the hub's permission endpoint and wait for the decision (this may wait for the phone). Rejects if the hub is unreachable (the command is then not run) or returns an error.
 async function askPermission() {
   const activeToken = await obtainToken();
   return new Promise((resolve, reject) => {
@@ -86,6 +98,7 @@ async function askPermission() {
       tool_input: { command },
     });
 
+    // Request headers include the agent name and tmux pane, and the token if we have one.
     const headers = {
       'Content-Type': 'application/json',
       'Content-Length': Buffer.byteLength(payload),
@@ -106,6 +119,7 @@ async function askPermission() {
         let body = '';
         res.on('data', (c) => { body += c; });
         res.on('end', () => {
+          // Main flow: ask permission; if not allowed, print the reason and exit with 1.
           try {
             const data = JSON.parse(body);
             if (res.statusCode >= 400) {
@@ -138,6 +152,7 @@ try {
   }
 
   // Allowed: run the command with inherited stdio
+  // Allowed: run the command directly (no shell) with the terminal attached, and exit with the same exit code.
   const child = spawn(args[0], args.slice(1), {
     stdio: 'inherit',
     shell: false,
@@ -151,6 +166,7 @@ try {
   child.on('close', (code) => {
     process.exit(code ?? 0);
   });
+// Any error (for example the hub being down) stops here without running the command.
 } catch (err) {
   console.error(`\x1b[31m[ashr error]\x1b[0m ${err.message}`);
   process.exit(1);

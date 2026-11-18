@@ -1,13 +1,23 @@
+// Program: ashr - explain.js
+// Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+// Last Modified: 2026-11-18
+// Purpose: Turns an agent's request (usually a shell command) into one plain-English sentence plus short bullet points, using a table of simple rules.
 // Turns an agent's request into plain English: one sentence, then up to three short points.
 // Pure functions, no DOM, so node can test them. explain(ask, agentName) -> { headline, points }
 
+// Matches file names that probably hold secrets (.env files, .pem or .key files, ssh keys, credentials).
 const SECRET = /(^|\/)\.env(\.|$)|\.pem$|\.key$|id_rsa|credentials|secrets?\b/i;
+// Cut a string to n characters and add an ellipsis if it was longer.
 const short = (s, n = 48) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+// Split a command into words by whitespace.
 const words = (cmd) => cmd.trim().split(/\s+/);
+// The words after the command name, leaving out option flags that start with a dash.
 const args = (w, from = 1) => w.slice(from).filter((x) => !x.startsWith("-"));
+// Join items with commas and shorten the result; fall back to "some files" if empty.
 const list = (items) => short(items.join(", ")) || "some files";
 
 // Each rule: [test on the word list, sentence builder]. First match wins.
+// Rules for shell commands. Each rule is a pair: a test on the word list and a function that builds the sentence.
 const BASH = [
   [(w) => /^(cat|less|more|head|tail|bat)$/.test(w[0]) && args(w).some((f) => SECRET.test(f)),
     (w) => `Open your secrets file (${list(args(w))}). It holds passwords and keys.`],
@@ -39,22 +49,27 @@ const BASH = [
   [(w) => /^(ls|pwd|find|grep|rg|wc|which|echo)$/.test(w[0]), () => "Look around the project. Nothing changes."],
 ];
 
+// Explain one simple command: find the first rule whose test passes, or fall back to showing the command.
 function bashPart(cmd) {
+  // Make sure we have a string, then drop output redirections like "> file" before splitting into words.
   const c = String(cmd ?? "");
   const w = words(c.replace(/\s+\d?>+\s*\S+/g, ""));
   const rule = BASH.find(([test]) => test(w));
   return rule ? rule[1](w) : `Run "${short(c, 36)}" in the terminal.`;
 }
 
+// Explain a command that may chain several parts with &&, || or ;. Only the first three parts are described.
 function bash(cmd) {
   const c = String(cmd ?? "");
   const parts = c.split(/\s*(?:&&|\|\||;)\s*/).filter(Boolean);
   if (parts.length < 2) return bashPart(c);
   const steps = parts.slice(0, 3).map(bashPart).map((s) => s.split(". ")[0].replace(/\.$/, ""));
+  // Lower-case the first letter so the sentence reads "do this, then do that".
   const lower = (s) => (s ? s[0].toLowerCase() + s.slice(1) : "");
   return `${steps[0]}, then ${steps.slice(1).map(lower).join(", then ")}.`;
 }
 
+// Choose the headline sentence based on which tool the agent wants to use (Bash, Edit, Write, Read, Web...).
 function headline(ask) {
   const tool = ask?.tool || "";
   const target = String(ask?.summary || "").replace(/^\w+\s+/, "");
@@ -66,14 +81,23 @@ function headline(ask) {
   return `Use the ${tool || "unknown"} tool.`;
 }
 
+// One sentence per risk level, describing the worst case.
 const WORST = {
   high: "This could leak secrets or lose work.",
   medium: "Not dangerous by itself, but worth a look.",
   low: "This is usually safe.",
 };
 
+/**
+ * Explain an ask in plain English.
+ * @param {object} ask the request from the hub.
+ * @param {string} [agentName] agent name used in the "Allow and ... does it now" line.
+ * @returns {{headline: string, points: string[]}} a sentence and up to three bullets.
+ */
 export function explain(ask, agentName = "The agent") {
+  // Use a generic name when none was given.
   const agent = agentName || "The agent";
+  // Missing or invalid request: return a safe generic message.
   if (!ask || typeof ask !== "object") {
     return {
       headline: "Action needs your decision.",
@@ -83,6 +107,7 @@ export function explain(ask, agentName = "The agent") {
       ],
     };
   }
+  // Build the bullets: why it was flagged (if reasons exist), the worst case for this risk, and what Allow and Deny do.
   const points = [];
   if (Array.isArray(ask.reasons) && ask.reasons.length) points.push(`Flagged because: ${ask.reasons.join(", ")}.`);
   points.push(WORST[ask.risk] || WORST.medium);

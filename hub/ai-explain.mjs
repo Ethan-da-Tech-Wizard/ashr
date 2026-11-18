@@ -1,11 +1,18 @@
+// Program: ashr - ai-explain.mjs
+// Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+// Last Modified: 2026-11-18
+// Purpose: Gets a short plain-English explanation of a request from Gemini or Grok, and falls back to a built-in simulated explanation when there is no key or the call fails.
 // AI Quick Explain helper for ashr.
 // Calls Gemini or Grok to generate real-time plain-English risk explanations.
 // Falls back gracefully to high-quality simulated breakdowns when keys are missing or offline.
+// loadKeys reads the API keys.
 import { loadKeys } from './keys.mjs';
 
+// The web addresses of the two model APIs.
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 const GROK_URL = 'https://api.x.ai/v1/chat/completions';
 
+// Build an offline explanation by matching the request text against common risky patterns (secrets, recursive delete, installs, git push, docker run). Used when no real model answer is available.
 export function simulateExplanation(ask, provider = 'gemini') {
   const summary = ask?.summary || '';
   const tool = ask?.tool || 'Command';
@@ -30,6 +37,7 @@ export function simulateExplanation(ask, provider = 'gemini') {
   return `Executes "${summary}" via ${tool} with ${risk} risk.${reasons} Verify that this command is expected and safe for your system environment before approving.`;
 }
 
+// Build the instructions sent to the model: the tool, the command, the risk and the flags, asking for two or three plain sentences.
 function buildPrompt(ask) {
   const tool = ask?.tool || 'Bash';
   const summary = ask?.summary || 'command';
@@ -47,6 +55,7 @@ In 2-3 concise, plain-English sentences, explain:
 Do not use markdown formatting. Keep it readable and direct.`;
 }
 
+// Call Gemini (8 second limit) and return the first answer text; throws if the call fails or the answer is empty.
 async function callGemini({ prompt, apiKey, fetchFn }) {
   const url = `${GEMINI_URL}?key=${encodeURIComponent(apiKey)}`;
   const body = {
@@ -69,6 +78,7 @@ async function callGemini({ prompt, apiKey, fetchFn }) {
   return text;
 }
 
+// Call Grok in the same way with a system message and the prompt; throws on failure.
 async function callGrok({ prompt, apiKey, fetchFn }) {
   const body = {
     model: 'grok-2-latest',
@@ -99,6 +109,7 @@ async function callGrok({ prompt, apiKey, fetchFn }) {
   return text;
 }
 
+// Ask the chosen model. With no key, or on any failure, return the simulated text with simulated: true. The fetch function and keys can be replaced for tests.
 export async function requestAiExplanation({ ask, provider = 'gemini', fetchFn = globalThis.fetch, keys = loadKeys() }) {
   const normalizedProvider = provider === 'grok' ? 'grok' : 'gemini';
   const apiKey = normalizedProvider === 'grok' ? keys.grok : keys.gemini;

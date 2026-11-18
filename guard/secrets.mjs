@@ -1,20 +1,20 @@
-// ==============================================================================
-// Program: secrets.mjs
-// Programmer: Ethan-da-Tech-Wizard
-// Course: CIS 156 / Advanced Systems
-// Last Modified: November 18, 2026
-// Purpose: Pattern-based secret detector identifying exposed tokens and private keys
-// ==============================================================================
+// Program: ashr - secrets.mjs
+// Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+// Last Modified: 2026-11-18
+// Purpose: Detects secrets in text with built-in patterns and an entropy check, and optionally asks the external git-secret-shield tool.
 // Secret scanning: built-in regexes, plus git-secret-shield when ASHR_SECRET_SHIELD is set.
 // scanSecretsSync: regexes and entropy only. scanSecrets: async, adds the external tool.
+// Node modules for running a program, checking files, making a temp file and building paths.
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 
+// The label used when the external scan could not give an answer.
 export const SCAN_FAILED = 'secret scan failed';
 
+// Known secret shapes: AWS access keys, sk- API keys, GitHub tokens and private key headers.
 const PATTERNS = [
   ['AWS access key', /\bAKIA[0-9A-Z]{16}\b/],
   ['API key (sk-)', /\bsk-[A-Za-z0-9_-]{20,}/],
@@ -22,6 +22,7 @@ const PATTERNS = [
   ['private key', /-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----/],
 ];
 
+// Shannon entropy of a string: higher means more random-looking.
 function entropy(s) {
   const counts = new Map();
   for (const c of s) counts.set(c, (counts.get(c) || 0) + 1);
@@ -30,6 +31,7 @@ function entropy(s) {
   return h;
 }
 
+// True if text has a long token that mixes digits, lower and upper case and looks random (entropy over 4.2), which is typical of a key.
 function highEntropyToken(text) {
   for (const tok of text.match(/[A-Za-z0-9_\-+=]{32,}/g) || []) {
     if (/\d/.test(tok) && /[a-z]/.test(tok) && /[A-Z]/.test(tok) && entropy(tok) > 4.2) return true;
@@ -42,6 +44,7 @@ function highEntropyToken(text) {
 // Exit 0 = clean, 1 = findings (only with --fail-on-findings), 2 = bad path.
 // ASHR_SECRET_SHIELD points at the repo root (the folder holding secretshield/)
 // or at any file inside the secretshield/ package, e.g. .../secretshield/cli.py.
+// Find the git-secret-shield folder from ASHR_SECRET_SHIELD; return null if it is not set or not valid.
 function shieldRoot() {
   const p = process.env.ASHR_SECRET_SHIELD;
   if (!p) return null;
@@ -51,6 +54,7 @@ function shieldRoot() {
   return null;
 }
 
+// Run the external scanner on a file with a 3 second limit. Returns clean (exit 0), found (exit 1) or failed (anything else).
 function run(root, file) {
   return new Promise((resolve) => {
     execFile('python3', ['-m', 'secretshield', 'scan', file, '--fail-on-findings'], {
@@ -63,6 +67,7 @@ function run(root, file) {
   });
 }
 
+// Write the text to a private temp file, scan it, and always delete the temp folder afterwards.
 async function shieldVerdict(text, root) {
   let dir;
   try {
@@ -77,7 +82,9 @@ async function shieldVerdict(text, root) {
   }
 }
 
+// Built-in scan: returns a list of finding labels; an empty list means clean.
 // Labels for findings. Empty list means clean.
+// Check the patterns first; if none match, check for a high-entropy token.
 export function scanSecretsSync(text) {
   if (!text || typeof text !== 'string') return [];
   const found = PATTERNS.filter(([, re]) => re.test(text)).map(([name]) => name);
@@ -85,7 +92,9 @@ export function scanSecretsSync(text) {
   return found;
 }
 
+// Full scan: built-in checks first, then the external tool when configured.
 // Same, plus the external tool. A configured tool with no verdict yields SCAN_FAILED.
+// Returns the labels, adding "git-secret-shield hit" or SCAN_FAILED when relevant.
 export async function scanSecrets(text) {
   const found = scanSecretsSync(text);
   if (found.length || !text || typeof text !== 'string') return found;

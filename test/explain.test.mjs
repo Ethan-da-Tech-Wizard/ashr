@@ -1,19 +1,28 @@
+// Program: ashr - explain.test.mjs
+// Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+// Last Modified: 2026-11-18
+// Purpose: Tests the plain-English explanations in app/explain.js for secrets, installs, pushes, deletes, chained commands, file tools and the bullet points.
+// Test tools and the explain function.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { explain } from '../app/explain.js';
 
+// Shortcut that returns only the headline for a tool and summary.
 const head = (tool, summary, extra = {}) => explain({ tool, summary, risk: 'medium', ...extra }).headline;
 
+// Secret files are called out in plain words.
 test('secret files are called out in plain words', () => {
   assert.match(head('Bash', 'cat .env'), /secrets file \(\.env\).*passwords and keys/);
 });
 
+// Installs, pushes and deletes read as plain sentences.
 test('installs, pushes and deletes read as plain sentences', () => {
   assert.equal(head('Bash', 'npm install framer-motion'), 'Download and install framer-motion from the internet.');
   assert.equal(head('Bash', 'git push origin main'), 'Upload this code to GitHub on the "main" branch. Your team will see it.');
   assert.match(head('Bash', 'rm -rf build'), /^Delete build\. Deleted files do not come back\.$/);
 });
 
+// A chained command becomes one sentence using "then".
 test('chained commands become one sentence with "then"', () => {
   assert.equal(
     head('Bash', 'rm -rf node_modules && npm install'),
@@ -21,16 +30,19 @@ test('chained commands become one sentence with "then"', () => {
   );
 });
 
+// Redirects are ignored and unknown commands still get a sentence.
 test('redirects are ignored and unknown commands still get a sentence', () => {
   assert.equal(head('Bash', 'npm test 2>/dev/null'), "Run the project's tests.");
   assert.match(head('Bash', 'frobnicate --all'), /^Run "frobnicate --all" in the terminal\.$/);
 });
 
+// File tools name the file.
 test('file tools name the file', () => {
   assert.equal(head('Edit', 'Edit src/components/Nav.tsx'), 'Change the file src/components/Nav.tsx.');
   assert.equal(head('Write', 'Write notes.md'), 'Create or replace the file notes.md.');
 });
 
+// The points give the reason, the risk and what each choice does.
 test('points give the reason, the risk and what each choice does', () => {
   const { points } = explain({ tool: 'Bash', summary: 'cat .env', risk: 'high', reasons: ['may expose secrets'] }, 'claude');
   assert.deepEqual(points, [

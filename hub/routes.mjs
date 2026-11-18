@@ -1,4 +1,9 @@
+// Program: ashr - routes.mjs
+// Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+// Last Modified: 2026-11-18
+// Purpose: The hub's endpoint handlers: agent hooks (permission, event, tokens, fake demo agents), the phone's API (pair, decide, say, kill, explain) and helpers to pick sessions.
 // Endpoint handlers. Each handler gets (ctx, req, body) and returns { status, json } or handles res itself.
+// Pull in the risk scorer, tmux helpers, notifier, owner check, audit vault and AI explainer.
 import { score } from '../guard/rules.mjs';
 import { typeInto, interrupt, validTarget } from './tmux.mjs';
 import { notifyAsk } from './notify.mjs';
@@ -6,17 +11,21 @@ import { validOwner } from './owner.mjs';
 import { recordDecisionToVault } from './aws-vault.mjs';
 import { requestAiExplanation } from './ai-explain.mjs';
 
+// The reply the hub sends to a hook to allow an action, and a function that builds a deny reply with a message.
 const ALLOW = { hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'allow' } } };
 const denyBody = (message) => ({
   hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'deny', message } },
 });
 
+// Return the value only if it is a string that is not longer than max, otherwise null.
 const str = (v, max) => (typeof v === 'string' && v.length <= max ? v : null);
+// Allowed values: agent names, session states and risk levels; and the most asks that may wait at once.
 const AGENTS = new Set(['claude', 'codex', 'gemini', 'grok']);
 const STATES = new Set(['needs_you', 'working', 'done', 'failed', 'signed_out', 'idle']);
 const MAX_OPEN_ASKS = 20;
 const RISKS = new Set(['low', 'medium', 'high']);
 
+// Work out which session a hook call belongs to: the agent name (from the body, a header or the token), a short session id, and the fields to update (folder, tmux pane, title).
 function claudeSession(ctx, body, req, tokenSession) {
   const reqAgent = str(req.headers['x-ashr-agent'], 20);
   const tokenAgent = tokenSession?.agentId && AGENTS.has(tokenSession.agentId)
@@ -34,6 +43,7 @@ function claudeSession(ctx, body, req, tokenSession) {
   return { id, patch };
 }
 
+// If the request has a Bearer token, check that it is valid, has the needed capability and matches the agent. Returns null when no token was sent (local hooks may omit it), or an error reply, or the session.
 function verifyAgentToken(ctx, req, requiredCapability, sessionAgent) {
   const authHeader = req.headers?.authorization;
   if (!authHeader) return null;
@@ -63,6 +73,7 @@ function verifyAgentToken(ctx, req, requiredCapability, sessionAgent) {
   return { session };
 }
 
+// Issue a scoped agent token (localhost only), using safe defaults for missing fields.
 export async function hookAgentToken(ctx, req, body = {}) {
   const agentId = typeof body?.agentId === 'string' && body.agentId.trim() ? body.agentId.trim() : 'agent';
   const role = typeof body?.role === 'string' && body.role.trim() ? body.role.trim() : 'worker';
@@ -91,6 +102,7 @@ export async function hookAgentToken(ctx, req, body = {}) {
   };
 }
 
+// Revoke an agent token.
 export async function hookAgentTokenRevoke(ctx, req, body = {}) {
   const token = typeof body?.token === 'string' ? body.token : '';
   const revoked = ctx.auth.revoke(token);
@@ -103,6 +115,7 @@ export async function hookAgentTokenRevoke(ctx, req, body = {}) {
   };
 }
 
+// The main hook: an agent asks permission for a tool call. Score the call; low risk is allowed and logged straight away. Otherwise the request is held for the phone, a notification is sent, and the reply waits for the user's allow or deny.
 export async function hookPermission(ctx, req, body, res) {
   const bodyAgent = body && typeof body.agent === 'string' ? body.agent : (req.headers && req.headers['x-ashr-agent'] ? req.headers['x-ashr-agent'] : null);
   const authRes = verifyAgentToken(ctx, req, 'hook:permission', bodyAgent);
@@ -110,6 +123,7 @@ export async function hookPermission(ctx, req, body, res) {
 
   const { id, patch } = claudeSession(ctx, body, req, authRes?.session);
   ctx.state.upsertSession(id, patch);
+  // Scored low: allow. Queue full (20 waiting): deny. Otherwise create a held ask.
   const verdict = await score({ tool: body.tool_name, input: body.tool_input, cwd: body.cwd });
   if (verdict.risk === 'low') {
     ctx.state.addLog(id, verdict.summary, 'auto');
@@ -131,11 +145,13 @@ export async function hookPermission(ctx, req, body, res) {
     reasons: verdict.reasons,
   });
   notifyAsk(ask).catch(() => {});
+  // If the agent disconnects while waiting, cancel the ask.
   res.on('close', () => { if (!res.writableEnded) ctx.state.cancelAsk(ask.id); });
   const d = await decision;
   return { status: 200, json: d.behavior === 'allow' ? ALLOW : denyBody(d.message ?? 'Denied from phone') };
 }
 
+// Lifecycle hook: update the session state from the event name (prompt submitted, session start, stop, notifications).
 export async function hookEvent(ctx, req, body) {
   const bodyAgent = body && typeof body.agent === 'string' ? body.agent : (req.headers && req.headers['x-ashr-agent'] ? req.headers['x-ashr-agent'] : null);
   const authRes = verifyAgentToken(ctx, req, 'hook:event', bodyAgent);
@@ -164,7 +180,9 @@ export async function hookEvent(ctx, req, body) {
   return { status: 200, json: {} };
 }
 
+// Fake agents (for demos and tests) create or update a session and optionally add an ask.
 // Localhost-only demo hook: { session: {id?, agent, title, state, cwd?, owner?}, ask?: {tool, summary, detail, risk, reasons} }
+// Validate every field before use. A session that is no longer waiting has its demo asks cleared.
 export async function hookFake(ctx, req, body) {
   const sess = body.session && typeof body.session === 'object' ? body.session : null;
   if (!sess || !AGENTS.has(sess.agent)) return { status: 400, json: { error: 'session.agent must be claude|codex|gemini' } };
@@ -192,13 +210,16 @@ export async function hookFake(ctx, req, body) {
   return { status: 200, json: { ok: true, id } };
 }
 
+// Phone trades a pairing code for a token.
 export async function apiPair(ctx, req, body) {
   const out = ctx.auth.redeem(body.code);
   if (out.error) return { status: out.status, json: { error: out.error } };
   return { status: 200, json: { token: out.token } };
 }
 
+// Create a new pairing code and link, announce it on the hub terminal and return the link.
 // Localhost-only: issue a fresh pair code, print it (with QR) on the hub terminal, return the URL.
+// Build the pairing URL from the base address and the new code.
 export async function hookPairCode(ctx) {
   const code = ctx.auth.newCode();
   const base = (ctx.baseUrl ? ctx.baseUrl() : `http://127.0.0.1:${ctx.port}`).replace(/\/$/, '');
@@ -207,6 +228,7 @@ export async function hookPairCode(ctx) {
   return { status: 200, json: { url } };
 }
 
+// Phone's allow or deny for an ask. Gives 410 if the ask is gone, 400 for bad input, and records the decision in the audit vault.
 export async function apiDecide(ctx, req, body) {
   const askId = str(body.askId, 64);
   if (!askId) return { status: 400, json: { error: 'askId required' } };
@@ -220,6 +242,7 @@ export async function apiDecide(ctx, req, body) {
   return { status: 200, json: { ok: true } };
 }
 
+// Ask Gemini or Grok to explain an ask. If the hub no longer has the ask, one can be rebuilt from the request body.
 export async function apiExplain(ctx, req, body) {
   const askId = str(body?.askId, 64);
   if (!askId) return { status: 400, json: { error: 'askId required' } };
@@ -251,6 +274,7 @@ export async function apiExplain(ctx, req, body) {
   };
 }
 
+// Find the session and check that it has a valid tmux pane; otherwise an error reply.
 function target(ctx, body) {
   const id = str(body.sessionId, 64);
   const s = id && ctx.state.sessions.get(id);
@@ -259,6 +283,7 @@ function target(ctx, body) {
   return { session: s };
 }
 
+// Type the phone's message into the agent's tmux pane (line breaks become spaces) and mark the agent as working.
 export async function apiSay(ctx, req, body) {
   const text = str(body.text, 2000);
   if (!text || !text.trim()) return { status: 400, json: { error: 'text required (1-2000 chars)' } };
@@ -274,6 +299,7 @@ export async function apiSay(ctx, req, body) {
   return { status: 200, json: { ok: true } };
 }
 
+// Send Ctrl-C to the agent's tmux pane.
 export async function apiKill(ctx, req, body) {
   const t = target(ctx, body);
   if (t.error) return t.error;
@@ -286,4 +312,5 @@ export async function apiKill(ctx, req, body) {
   return { status: 200, json: { ok: true } };
 }
 
+// Re-export the tmux helpers for tests.
 export { typeInto, interrupt };
