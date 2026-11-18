@@ -1,7 +1,6 @@
 // ==============================================================================
 // Program: auth.mjs
 // Programmer: Ethan-da-Tech-Wizard
-// Course: CIS 156 / Advanced Systems
 // Last Modified: November 18, 2026
 // Purpose: Ephemeral token generation and capability scoping for supervised agents
 // ==============================================================================

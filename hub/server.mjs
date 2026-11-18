@@ -1,7 +1,6 @@
 // ==============================================================================
 // Program: server.mjs
 // Programmer: Ethan-da-Tech-Wizard
-// Course: CIS 156 / Advanced Systems
 // Last Modified: November 18, 2026
 // Purpose: HTTP hub server coordinating phone-in-the-loop agent supervision and API routes
 // ==============================================================================

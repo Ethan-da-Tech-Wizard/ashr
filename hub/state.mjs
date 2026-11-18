@@ -1,7 +1,6 @@
 // ==============================================================================
 // Program: state.mjs
 // Programmer: Ethan-da-Tech-Wizard
-// Course: CIS 156 / Advanced Systems
 // Last Modified: November 18, 2026
 // Purpose: In-memory hub state and pending ask queue management
 // ==============================================================================

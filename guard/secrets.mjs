@@ -1,7 +1,6 @@
 // ==============================================================================
 // Program: secrets.mjs
 // Programmer: Ethan-da-Tech-Wizard
-// Course: CIS 156 / Advanced Systems
 // Last Modified: November 18, 2026
 // Purpose: Pattern-based secret detector identifying exposed tokens and private keys
 // ==============================================================================
