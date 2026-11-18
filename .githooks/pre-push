@@ -1,0 +1,3 @@
+#!/bin/sh
+# Blocks pushes straight to main. Turned on by npm run task, sync or ship.
+exec node scripts/task.mjs prepush

@@ -1,0 +1,21 @@
+{
+  "name": "ashr",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "hub": "node hub/server.mjs",
+    "hub:tunnel": "bash scripts/hub-tunnel.sh",
+    "fake": "node scripts/fake-agents.mjs",
+    "pair": "node scripts/pair.mjs",
+    "demo": "bash scripts/demo.sh",
+    "demo:tunnel": "bash scripts/demo.sh --tunnel",
+    "record": "node scripts/record-video.mjs",
+    "test": "node --test test/*.test.mjs",
+    "test:shield": "ASHR_SECRET_SHIELD_TEST=${ASHR_SECRET_SHIELD_TEST:-../git-secret-shield} node --test test/*.test.mjs",
+    "task": "node scripts/task.mjs task",
+    "sync": "node scripts/task.mjs sync",
+    "ship": "node scripts/task.mjs ship"
+  }
+}

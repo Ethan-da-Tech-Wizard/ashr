@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "PermissionRequest": [
+      { "hooks": [ { "type": "http", "url": "http://127.0.0.1:7777/hook/permission", "timeout": 120, "headers": { "X-Ashr-Pane": "$TMUX_PANE" }, "allowedEnvVars": ["TMUX_PANE"] } ] }
+    ],
+    "Notification": [
+      { "hooks": [ { "type": "http", "url": "http://127.0.0.1:7777/hook/event", "headers": { "X-Ashr-Pane": "$TMUX_PANE" }, "allowedEnvVars": ["TMUX_PANE"] } ] }
+    ],
+    "Stop": [
+      { "hooks": [ { "type": "http", "url": "http://127.0.0.1:7777/hook/event", "headers": { "X-Ashr-Pane": "$TMUX_PANE" }, "allowedEnvVars": ["TMUX_PANE"] } ] }
+    ],
+    "SessionStart": [
+      { "hooks": [ { "type": "http", "url": "http://127.0.0.1:7777/hook/event", "headers": { "X-Ashr-Pane": "$TMUX_PANE" }, "allowedEnvVars": ["TMUX_PANE"] } ] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "http", "url": "http://127.0.0.1:7777/hook/event", "headers": { "X-Ashr-Pane": "$TMUX_PANE" }, "allowedEnvVars": ["TMUX_PANE"] } ] }
+    ]
+  }
+}

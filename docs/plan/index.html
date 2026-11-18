@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="description" content="ashr: SunHacks 2026 plan, progress and decisions" />
+<title>ashr: the SunHacks plan</title>
+<style>
+  :root { --bg:#050806; --s:#0d130f; --s2:#141d17; --line:#1f2d24; --ink:#ecfff1; --mute:#7f9787; --lime:#8cff32; --field:#2fd16b; --rust:#ff4d4d; --amber:#ffb020; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:radial-gradient(110% 40% at 50% 0%, rgba(140,255,50,.12), transparent 70%), var(--bg); color:var(--ink); font-family:"Inter Tight","SF Pro Display",system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:1080px; margin:0 auto; padding:56px 24px 96px; }
+  .eyebrow { color:var(--lime); font-size:13px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; }
+  h1 { font-size:clamp(44px,8vw,88px); line-height:.95; letter-spacing:-.045em; margin:14px 0 18px; font-weight:800; }
+  h2 { font-size:34px; letter-spacing:-.03em; margin:0 0 14px; }
+  h3 { font-size:20px; letter-spacing:-.01em; margin:0 0 8px; }
+  .lede { font-size:22px; color:var(--mute); max-width:660px; line-height:1.4; margin:0; }
+  section { margin-top:84px; }
+  ul.pts { padding:0; margin:0 0 26px; list-style:none; display:grid; gap:10px; }
+  ul.pts li { font-size:19px; line-height:1.4; padding-left:22px; position:relative; }
+  ul.pts li::before { content:""; position:absolute; left:0; top:11px; width:8px; height:8px; border-radius:50%; background:var(--lime); }
+  img.board { width:100%; border-radius:22px; border:1px solid var(--line); display:block; }
+  figure { margin:0; }
+  .phones { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; }
+  .phones img { width:100%; border-radius:26px; border:1px solid var(--line); display:block; }
+  .phones figcaption { color:var(--mute); font-size:15px; margin-top:10px; text-align:center; }
+  .stat { display:inline-block; font-size:15px; padding:6px 12px; border:1px solid var(--line); border-radius:99px; margin:0 6px 8px 0; color:var(--mute); }
+  .stat b { color:var(--lime); }
+  code { font-family:ui-monospace,Menlo,monospace; background:var(--s2); padding:2px 6px; border-radius:6px; font-size:.9em; }
+  a { color:var(--lime); }
+
+  .board-card { background:var(--s); border:1px solid var(--line); border-radius:22px; padding:22px; }
+  .stamp { color:var(--mute); font-size:14px; margin:0 0 16px; }
+  .rows { display:grid; gap:8px; }
+  .row { display:grid; grid-template-columns:150px 1fr auto; gap:14px; align-items:center; padding:12px 14px; border-radius:14px; background:var(--s2); font-size:16px; }
+  .row .who { color:var(--mute); font-size:14px; }
+  .chip { font-size:11px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; padding:5px 10px; border-radius:99px; white-space:nowrap; }
+  .chip.done { color:var(--lime); background:rgba(140,255,50,.12); }
+  .chip.wip { color:var(--amber); background:rgba(255,176,32,.14); }
+  .chip.todo { color:var(--mute); background:rgba(255,255,255,.06); }
+  .chip.open { color:var(--rust); background:rgba(255,77,77,.14); }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .kv { display:grid; grid-template-columns:190px 1fr; gap:6px 16px; font-size:17px; line-height:1.4; }
+  .kv dt { color:var(--mute); } .kv dd { margin:0; }
+  table { width:100%; border-collapse:collapse; font-size:16px; }
+  th { text-align:left; color:var(--mute); font-size:12px; letter-spacing:.1em; text-transform:uppercase; padding:8px 10px; border-bottom:1px solid var(--line); }
+  td { padding:11px 10px; border-bottom:1px solid var(--line); vertical-align:top; line-height:1.35; }
+  td.id { color:var(--lime); font-weight:700; white-space:nowrap; }
+  td.dim { color:var(--mute); white-space:nowrap; }
+  .scroll { overflow-x:auto; }
+  .docs { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  .doc { background:var(--s); border:1px solid var(--line); border-radius:16px; padding:14px 16px; }
+  .doc code { background:none; padding:0; color:var(--lime); font-size:14px; }
+  .doc p { margin:6px 0 10px; color:var(--mute); font-size:15px; line-height:1.35; }
+  ol.log { margin:0; padding:0; list-style:none; display:grid; gap:8px; font-size:16px; line-height:1.4; }
+  ol.log time { color:var(--mute); margin-right:6px; }
+  details { margin-top:14px; } summary { cursor:pointer; color:var(--mute); font-size:15px; }
+
+  .tour { display:grid; grid-template-columns:minmax(0,340px) 1fr; gap:34px; align-items:start; }
+  .shot { position:relative; }
+  .shot img { width:100%; border-radius:30px; border:1px solid var(--line); display:block; }
+  .pin { position:absolute; width:30px; height:30px; margin:-15px 0 0 -15px; border-radius:50%; background:var(--lime); color:#041003; font-weight:800; font-size:15px; display:grid; place-items:center; box-shadow:0 0 0 4px rgba(5,8,6,.8), 0 0 18px rgba(140,255,50,.7); text-decoration:none; }
+  .zoom { display:grid; grid-template-columns:34px 1fr; gap:12px; padding:14px 0; border-bottom:1px solid var(--line); }
+  .zoom .n { width:30px; height:30px; border-radius:50%; background:var(--lime); color:#041003; font-weight:800; display:grid; place-items:center; text-decoration:none; }
+  .zoom p { margin:0; color:var(--mute); font-size:16px; line-height:1.4; }
+  .flow { width:100%; height:auto; display:block; background:var(--s); border:1px solid var(--line); border-radius:22px; }
+  .chars { max-width:560px; width:100%; border-radius:22px; border:1px solid var(--line); display:block; }
+
+  .phase { background:var(--s); border:1px solid var(--line); border-radius:18px; padding:18px 20px; margin-bottom:12px; }
+  .phase .head { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:10px; }
+  .phase .head h3 { margin:0; }
+  ul.tasks { list-style:none; padding:0; margin:0 0 12px; display:grid; gap:6px; font-size:16px; line-height:1.35; }
+  ul.tasks li { padding-left:26px; position:relative; }
+  ul.tasks li::before { position:absolute; left:0; top:0; font-weight:800; }
+  ul.tasks li[data-state="done"]::before { content:"\2713"; color:var(--lime); }
+  ul.tasks li[data-state="wip"]::before { content:"\2026"; color:var(--amber); }
+  ul.tasks li[data-state="todo"]::before { content:"\25CB"; color:var(--mute); }
+  .phase p.test { margin:0 0 8px; color:var(--mute); font-size:15px; }
+  pre { margin:0; background:var(--s2); border-radius:12px; padding:10px 14px; overflow-x:auto; font-size:14px; }
+  pre code { background:none; padding:0; }
+  dl.metadata { display:grid; grid-template-columns:120px 1fr; gap:4px 14px; font-size:14px; color:var(--mute); margin:10px 0 0; }
+  dl.metadata dd { margin:0; }
+  @media (max-width:760px) {
+    .phones { grid-template-columns:1fr 1fr; } .grid2, .tour { grid-template-columns:1fr; } .docs { grid-template-columns:1fr; }
+    .row { grid-template-columns:1fr auto; } .row .who { display:none; } .kv { grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">SunHacks 2026 · Zazu + Ethan</div>
+  <h1>ashr</h1>
+  <p class="lede" id="purpose">Named for Asha, the Zoroastrian fire of truth and order. Keeps your coding agents in order. Safe commands pass on their own. Risky ones buzz your phone. One swipe answers.</p>
+  <div style="margin-top:22px">
+    <span class="stat"><b>214</b> tests pass</span>
+    <span class="stat"><b>32</b> pull requests merged</span>
+    <span class="stat"><b>4</b> agent types: Claude, Codex, Gemini, Grok</span>
+    <span class="stat"><b>0</b> npm packages</span>
+  </div>
+
+  <details><summary>Page details</summary>
+    <dl class="metadata">
+      <dt>created</dt><dd>2026-11-14</dd>
+      <dt>modified</dt><dd>2026-11-15T07:30 (Phoenix)</dd>
+      <dt>agent</dt><dd>Zazu's Claude Code session</dd>
+      <dt>repo</dt><dd>github.com/zazmattaz-debug/ashr</dd>
+    </dl>
+  </details>
+
+  <section id="status">
+    <h2>Where we stand</h2>
+    <div class="board-card">
+      <p class="stamp">Last updated <time datetime="2026-11-15T07:30">2026-11-15, 7:30 am Phoenix</time> by Zazu's Claude Code session. Overall: <b style="color:var(--lime)">built, not yet submitted</b>.</p>
+      <div class="rows">
+        <div class="row"><b>1. Core loop</b><span>Hub, guard, phone app, one-time pairing, public tunnel</span><span class="chip done">done</span></div>
+        <div class="row"><b>2. Teamwork</b><span>Automatic tests on every pull request, task / sync / ship commands, push guard</span><span class="chip done">done</span></div>
+        <div class="row"><b>3. Phone redesign</b><span>Folder cards, plain-English sentences, redirect button, owner characters, decision faces</span><span class="chip done">done</span></div>
+        <div class="row"><b>4. More agents, more safety</b><span>Gemini and Grok hooks, lock-screen alerts, AWS audit vault, guard hardening, model explanations</span><span class="chip done">done</span></div>
+        <div class="row"><b>5. Demo kit</b><span>85-second backup video and stage pitch are written. Slides issue #5 is still open.</span><span class="chip wip">in progress</span></div>
+        <div class="row"><b>6. Submit</b><span>Full rehearsal on venue Wi-Fi, make the repo public if required (issue #7), submit</span><span class="chip todo">to do</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="goal-contract">
+    <h2>Goal contract</h2>
+    <div class="board-card">
+      <dl class="kv">
+        <dt>Outcome</dt><dd>Win SunHacks 2026 with a phone guard for coding agents.</dd>
+        <dt>Target</dt><dd>On stage, three blocked agents are answered from a phone in 30 seconds with the laptop lid closed.</dd>
+        <dt>Check</dt><dd><code>npm test</code> passes, and <code>npm run demo:tunnel</code> pairs a phone and takes a swipe.</dd>
+        <dt>Budget</dt><dd>The hackathon weekend. Free tiers only. No npm packages.</dd>
+        <dt>Allowed without asking</dt><dd>Work on a branch in your own folders, with a pull request and green tests.</dd>
+        <dt>Must stop and ask</dt><dd>Making the repo public. Adding real API keys. Large edits in the other owner's folders.</dd>
+        <dt>Done means</dt><dd>Submitted with the video and pitch, after one full rehearsal on venue Wi-Fi.</dd>
+      </dl>
+    </div>
+  </section>
+
+  <section id="problem-solution">
+    <h2>Problem, then solution</h2>
+    <div class="grid2">
+      <div class="board-card" id="problem">
+        <h3>The problem</h3>
+        <ul class="pts" style="margin:0">
+          <li>You run 3 or more coding agents at once.</li>
+          <li>One stops to ask "can I run this?" and waits 20 minutes.</li>
+          <li>You only find out when you walk back to the laptop.</li>
+        </ul>
+      </div>
+      <div class="board-card" id="solution">
+        <h3>The solution</h3>
+        <ul class="pts" style="margin:0">
+          <li>A guard scores every command. Safe ones pass with no ping.</li>
+          <li>Risky ones arrive on your phone as a card in plain English.</li>
+          <li>You allow, deny, or tell the agent what to do instead.</li>
+        </ul>
+      </div>
+    </div>
+    <svg class="flow" style="margin-top:14px" viewBox="0 0 1040 250" role="img" aria-label="Flow: an agent asks to run a command. The guard on the laptop scores it. Low risk is allowed with no ping. Medium and high risk go to the phone as a card. The person allows, denies or redirects, and the answer goes back to the agent.">
+      <g font-family="Inter Tight, system-ui, sans-serif" font-size="17" fill="#ecfff1">
+        <g stroke="#1f2d24" fill="#141d17"><rect x="20" y="95" width="170" height="60" rx="16"/><rect x="250" y="95" width="190" height="60" rx="16"/><rect x="520" y="20" width="210" height="60" rx="16"/><rect x="520" y="170" width="210" height="60" rx="16"/><rect x="810" y="170" width="210" height="60" rx="16"/></g>
+        <text x="105" y="131" text-anchor="middle">Agent asks</text>
+        <text x="345" y="131" text-anchor="middle" fill="#8cff32" font-weight="700">Guard scores it</text>
+        <text x="625" y="56" text-anchor="middle">Low: allowed, no ping</text>
+        <text x="625" y="206" text-anchor="middle">Medium or high: card</text>
+        <text x="915" y="194" text-anchor="middle">You swipe:</text><text x="915" y="216" text-anchor="middle" font-size="15" fill="#7f9787">allow · deny · redirect</text>
+        <g stroke="#8cff32" stroke-width="2.5" fill="none" stroke-linecap="round"><path d="M190 125h52"/><path d="M440 112c40-10 40-56 72-60"/><path d="M440 138c40 10 40 56 72 60"/><path d="M730 200h72"/><path d="M915 170V125H730" stroke-dasharray="6 7"/><path d="M730 125H470" stroke-dasharray="6 7"/></g>
+        <g fill="#8cff32"><path d="M250 125l-10-6v12z"/><path d="M520 51l-11-3 4 11z"/><path d="M520 199l-7-10-4 11z"/><path d="M810 200l-10-6v12z"/><path d="M462 125l10-6v12z"/></g>
+        <text x="760" y="113" font-size="14" fill="#7f9787" text-anchor="middle">answer goes back to the agent</text>
+      </g>
+    </svg>
+  </section>
+
+  <section id="zooms">
+    <h2>The phone screen, piece by piece</h2>
+    <div class="tour">
+      <div class="shot">
+        <img src="ui-1-inbox.png" alt="ashr home screen on a phone: a row of agent tiles, the count of agents that need you, one large request card, and three round buttons" />
+        <a class="pin" id="callout-1" href="#zoom-1" style="left:4%;top:8%">1</a>
+        <a class="pin" id="callout-2" href="#zoom-2" style="left:5%;top:25.5%">2</a>
+        <a class="pin" id="callout-3" href="#zoom-3" style="left:93%;top:53%">3</a>
+        <a class="pin" id="callout-4" href="#zoom-4" style="left:93%;top:81%">4</a>
+        <a class="pin" id="callout-5" href="#zoom-5" style="left:12%;top:93%">5</a>
+      </div>
+      <div>
+        <div class="zoom" id="zoom-1"><a class="n" href="#callout-1">1</a><div><h3>Agent tiles</h3><p>The character shows who owns the agent. The colour shows which agent it is. The name under it comes from GitHub.</p></div></div>
+        <div class="zoom" id="zoom-2"><a class="n" href="#callout-2">2</a><div><h3>The count</h3><p>How many agents are waiting on you right now.</p></div></div>
+        <div class="zoom" id="zoom-3"><a class="n" href="#callout-3">3</a><div><h3>One plain sentence</h3><p>The card says what the command does in plain English. The exact command sits under it in small type.</p></div></div>
+        <div class="zoom" id="zoom-4"><a class="n" href="#callout-4">4</a><div><h3>What is this?</h3><p>One tap opens why it was flagged, how risky it is, and an answer from Gemini or Grok.</p></div></div>
+        <div class="zoom" id="zoom-5"><a class="n" href="#callout-5">5</a><div><h3>Three answers</h3><p>Deny, redirect, or allow. Swiping left and right does the same as the outer buttons.</p></div></div>
+        <img class="chars" style="margin-top:22px" src="chars.png" alt="Grid of character icons. Each column is one person's character, each row is one agent's colour: orange Claude, blue Codex, pink Gemini, grey Grok. The bottom row shows the happy, cross and unbothered faces used after a decision." />
+      </div>
+    </div>
+    <div class="phones" style="margin-top:34px">
+      <figure><img src="ui-2-swipe.png" alt="A card with the What is this drawer open, showing three points and a model's answer" /><figcaption>The drawer, with a model's answer</figcaption></figure>
+      <figure><img src="fx-allow.png" alt="After allow: the owner's character smiling with a thumb up on a green tile" /><figcaption>Allow</figcaption></figure>
+      <figure><img src="fx-deny.png" alt="After deny: the owner's character frowning with a thumb down on a red tile" /><figcaption>Deny</figcaption></figure>
+      <figure><img src="fx-redirect.png" alt="After redirect: the owner's character with half-closed eyes on a grey tile" /><figcaption>Redirect</figcaption></figure>
+    </div>
+  </section>
+
+  <section id="phases">
+    <h2>Phases</h2>
+    <div class="phase" id="phase-1">
+      <div class="head"><h3>Phase 1: Core loop</h3><span class="chip done">done</span></div>
+      <ul class="tasks">
+        <li data-state="done">Hub on the laptop receives every command before it runs.</li>
+        <li data-state="done">Guard scores each command low, medium or high.</li>
+        <li data-state="done">Phone app shows cards and sends the answer back.</li>
+        <li data-state="done">One-time pairing code and a public Cloudflare link.</li>
+      </ul>
+      <p class="test">Testing strategy: unit tests for the guard and hub, plus one real Claude Code command answered from a phone.</p>
+      <pre><code>npm test</code></pre>
+    </div>
+    <div class="phase" id="phase-2">
+      <div class="head"><h3>Phase 2: Teamwork</h3><span class="chip done">done</span></div>
+      <ul class="tasks">
+        <li data-state="done">GitHub runs the tests on every pull request.</li>
+        <li data-state="done">Task, sync and ship commands, one folder per task.</li>
+        <li data-state="done">A git hook blocks pushes straight to main.</li>
+      </ul>
+      <p class="test">Testing strategy: dry run against a throwaway copy of the repo: bad names refused, overlap warned, main push blocked.</p>
+      <pre><code>npm run sync</code></pre>
+    </div>
+    <div class="phase" id="phase-3">
+      <div class="head"><h3>Phase 3: Phone redesign</h3><span class="chip done">done</span></div>
+      <ul class="tasks">
+        <li data-state="done">Folder cards with one plain-English sentence.</li>
+        <li data-state="done">What is this? drawer and a redirect button.</li>
+        <li data-state="done">One character per owner, one colour per agent.</li>
+        <li data-state="done">A character face after every answer.</li>
+        <li data-state="todo">Try all of it on a real phone, not only a phone-size browser.</li>
+      </ul>
+      <p class="test">Testing strategy: tests for the sentence and icon builders, plus a click-through in a 390 px browser.</p>
+      <pre><code>npm test</code></pre>
+    </div>
+    <div class="phase" id="phase-4">
+      <div class="head"><h3>Phase 4: More agents, more safety</h3><span class="chip done">done</span></div>
+      <ul class="tasks">
+        <li data-state="done">Gemini and Grok hooks next to Claude Code.</li>
+        <li data-state="done">Lock-screen alerts through ntfy.</li>
+        <li data-state="done">AWS S3 audit vault for every decision.</li>
+        <li data-state="done">Guard hardened against secret theft and hidden commands.</li>
+        <li data-state="done">Gemini or Grok explains a command on tap.</li>
+        <li data-state="todo">Confirm secrets are stripped before a command leaves the laptop (Q1, Q2).</li>
+      </ul>
+      <p class="test">Testing strategy: unit tests per feature, run by GitHub on each pull request.</p>
+      <pre><code>npm test</code></pre>
+    </div>
+    <div class="phase" id="phase-5">
+      <div class="head"><h3>Phase 5: Demo kit</h3><span class="chip wip">in progress</span></div>
+      <ul class="tasks">
+        <li data-state="done">85-second backup video recorded.</li>
+        <li data-state="done">2-minute stage pitch written.</li>
+        <li data-state="wip">Three slides (issue 5).</li>
+      </ul>
+      <p class="test">Testing strategy: play the video end to end and time the pitch out loud.</p>
+      <pre><code>open docs/demo.mp4</code></pre>
+    </div>
+    <div class="phase" id="phase-6">
+      <div class="head"><h3>Phase 6: Submit</h3><span class="chip todo">to do</span></div>
+      <ul class="tasks">
+        <li data-state="todo">Full rehearsal on venue Wi-Fi with real agents.</li>
+        <li data-state="todo">Make the repo public if SunHacks requires it (issue 7).</li>
+        <li data-state="todo">Submit.</li>
+      </ul>
+      <p class="test">Testing strategy: run the stage demo once from a cold start with the laptop lid closed.</p>
+      <pre><code>npm run demo:tunnel</code></pre>
+    </div>
+  </section>
+
+  <section id="decisions">
+    <h2>Decisions</h2>
+    <div class="scroll"><table>
+      <tr><th>#</th><th>Date</th><th>Decision</th><th>Why</th><th>Who</th></tr>
+      <tr><td class="id">D1</td><td class="dim">Nov 14</td><td>Build a guard, not a phone terminal.</td><td>Herdr (51k stars) already puts the terminal on a phone. Its users complain it pings for everything.</td><td class="dim">Both</td></tr>
+      <tr><td class="id">D2</td><td class="dim">Nov 14</td><td>The name is ashr. It replaces Kelpie.</td><td>From Asha, the Zoroastrian fire of truth and order.</td><td class="dim">Zazu</td></tr>
+      <tr><td class="id">D3</td><td class="dim">Nov 14</td><td>The repo lives on Zazu's GitHub with Ethan as collaborator.</td><td>Reverses the first plan to use Ethan's account.</td><td class="dim">Zazu</td></tr>
+      <tr><td class="id">D4</td><td class="dim">Nov 14</td><td>Node 24 only, no npm packages.</td><td>Setup stays one command on any laptop.</td><td class="dim">Both</td></tr>
+      <tr><td class="id">D5</td><td class="dim">Nov 14</td><td>Pair with a one-time code that expires in 10 minutes.</td><td>A review found the old permanent token was printed in the terminal.</td><td class="dim">Zazu</td></tr>
+      <tr><td class="id">D6</td><td class="dim">Nov 14</td><td>The phone also polls every 1.5 seconds.</td><td>The free Cloudflare tunnel held back the live stream, so the phone showed nothing.</td><td class="dim">Zazu</td></tr>
+      <tr><td class="id">D7</td><td class="dim">Nov 14</td><td>Teamwork runs on branches, pull requests and green tests. Any editor or agent is fine.</td><td>Ethan and Zazu do not use the same tools.</td><td class="dim">Zazu</td></tr>
+      <tr><td class="id">D8</td><td class="dim">Nov 14</td><td>A git hook blocks pushes to <code>main</code>.</td><td>GitHub's own rule needs a paid plan on a private repo.</td><td class="dim">Zazu</td></tr>
+      <tr><td class="id">D9</td><td class="dim">Nov 14</td><td>The app is black and green.</td><td>Reverses the light pastel look tried earlier the same day.</td><td class="dim">Zazu</td></tr>
+      <tr><td class="id">D10</td><td class="dim">Nov 14</td><td>Cards lead with a plain sentence. Details sit behind "What is this?".</td><td>"cat .env" told us nothing, and the first version had too much text.</td><td class="dim">Both</td></tr>
+      <tr><td class="id">D11</td><td class="dim">Nov 14</td><td>A third answer: tell the agent what to do instead.</td><td>Allow and deny were not enough when we disliked the agent's plan.</td><td class="dim">Both</td></tr>
+      <tr><td class="id">D12</td><td class="dim">Nov 14</td><td>Gemini or Grok can explain a command on tap.</td><td>A model reads odd commands better than fixed rules.</td><td class="dim">Ethan</td></tr>
+      <tr><td class="id">D13</td><td class="dim">Nov 14</td><td>Every agent is labelled with its owner's GitHub name.</td><td>We need to see who is working on what.</td><td class="dim">Zazu</td></tr>
+      <tr><td class="id">D14</td><td class="dim">Nov 14</td><td>The character belongs to the owner. The colour belongs to the agent.</td><td>Reverses one mascot per agent type, which could not tell owners apart.</td><td class="dim">Zazu</td></tr>
+      <tr><td class="id">D15</td><td class="dim">Nov 14</td><td>A character face follows every answer. Deny still burns the card.</td><td>Replaces the flame seal with something that reads at a glance.</td><td class="dim">Zazu</td></tr>
+      <tr><td class="id">D16</td><td class="dim">Nov 14</td><td>Every decision can be written to an AWS S3 audit vault.</td><td>Built for the Amazon sponsor prize.</td><td class="dim">Ethan</td></tr>
+      <tr><td class="id">D17</td><td class="dim">Nov 14</td><td>Swiping stays.</td><td>It is the fastest answer with one thumb. The buttons do the same.</td><td class="dim">Both</td></tr>
+    </table></div>
+  </section>
+
+  <section id="open-questions">
+    <h2>Open questions</h2>
+    <div class="scroll"><table>
+      <tr><th>#</th><th>Question</th><th>Owner</th><th>Blocks</th><th></th></tr>
+      <tr><td class="id">Q1</td><td>Model explanations send the command to Google or xAI. Are keys and passwords stripped first? Not confirmed.</td><td class="dim">Ethan</td><td class="dim">Demo trust</td><td><span class="chip open">open</span></td></tr>
+      <tr><td class="id">Q2</td><td>Lock-screen alerts post the command to a public ntfy.sh topic. Is that acceptable? Not confirmed.</td><td class="dim">Ethan</td><td class="dim">Demo trust</td><td><span class="chip open">open</span></td></tr>
+      <tr><td class="id">Q3</td><td>With no API key the model answer is simulated. Do we set a real key for the stage?</td><td class="dim">Ethan</td><td class="dim">Phase 5</td><td><span class="chip open">open</span></td></tr>
+      <tr><td class="id">Q4</td><td>One phone shows one laptop's agents. Do we build a shared hub so both owners show up for real?</td><td class="dim">Both</td><td class="dim">Nothing yet</td><td><span class="chip open">open</span></td></tr>
+      <tr><td class="id">Q5</td><td>Does SunHacks need the repo public before submitting? (issue #7)</td><td class="dim">Zazu</td><td class="dim">Phase 6</td><td><span class="chip open">open</span></td></tr>
+      <tr><td class="id">Q6</td><td>Nobody has run the full demo on venue Wi-Fi with real agents. When do we rehearse?</td><td class="dim">Both</td><td class="dim">Phase 6</td><td><span class="chip open">open</span></td></tr>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>Why not Herdr?</h2>
+    <ul class="pts">
+      <li>Herdr is real, with 51k GitHub stars. It already puts your agents on your phone.</li>
+      <li>We read 208 Reddit comments and its GitHub issues to find what people dislike.</li>
+      <li>ashr builds those gaps. It doesn't copy the terminal.</li>
+    </ul>
+    <img class="board" src="plan-vs.png" alt="Table comparing Herdr and ashr on six complaints" />
+  </section>
+
+  <section>
+    <h2>How it connects</h2>
+    <ul class="pts">
+      <li>The hub runs on the laptop. Each agent tells it before every command.</li>
+      <li>The phone reaches the hub through a Cloudflare tunnel, so venue Wi-Fi can't block it.</li>
+      <li>Each agent gets its own git worktree. Nobody overwrites anybody.</li>
+    </ul>
+    <img class="board" src="plan-arch.png" alt="Phone to tunnel to hub to agents" />
+    <img class="board" style="margin-top:14px" src="plan-guard.png" alt="Three risk lanes with example commands: low passes, medium is one swipe, high is a red card" />
+  </section>
+
+  <section>
+    <h2>Who does what</h2>
+    <ul class="pts">
+      <li>Zazu: phone app, team workflow, demo, pitch.</li>
+      <li>Ethan: hub, guard, security, extra agents, AWS vault.</li>
+      <li>Both follow one <code>AGENTS.md</code>, so any coding agent works in the repo.</li>
+    </ul>
+    <details><summary>The original team and demo boards from day one</summary>
+      <img class="board" style="margin-top:12px" src="plan-team.png" alt="Two columns of owners and their tools, as planned on day one" />
+      <img class="board" style="margin-top:12px" src="plan-demo.png" alt="Five-step demo timeline, as planned on day one" />
+    </details>
+  </section>
+
+  <section id="documents">
+    <h2>Documents</h2>
+    <h3 id="existing-files">Depends on</h3>
+    <div class="docs" style="margin-bottom:22px">
+      <div class="doc"><code>README.md</code><p>Start page for the team and judges.</p><span class="chip done">current</span></div>
+      <div class="doc"><code>AGENTS.md</code><p>Shared rules for every coding agent, with the 10 working-together steps.</p><span class="chip done">current</span></div>
+      <div class="doc"><code>docs/CONTRACT.md</code><p>The hub's endpoints and data shapes.</p><span class="chip done">current</span></div>
+      <div class="doc"><code>docs/THREAT-MODEL.md</code><p>What could go wrong and how the hub defends.</p><span class="chip wip">older than the new features</span></div>
+    </div>
+    <h3 id="new-files">Produced during the hackathon</h3>
+    <div class="docs">
+      <div class="doc"><code>docs/PITCH.md</code><p>The 2-minute stage pitch.</p><span class="chip done">written</span></div>
+      <div class="doc"><code>docs/demo.mp4</code><p>The 85-second backup video.</p><span class="chip done">recorded</span></div>
+      <div class="doc"><code>.github/workflows/test.yml</code><p>Runs the tests on every pull request.</p><span class="chip done">live</span></div>
+      <div class="doc"><code>scripts/task.mjs</code><p>The task, sync and ship commands and the push guard.</p><span class="chip done">live</span></div>
+      <div class="doc"><code>docs/plan/index.html</code><p>This page.</p><span class="chip done">current</span></div>
+    </div>
+  </section>
+
+  <section id="validator-spec">
+    <h2>How we check it</h2>
+    <p class="stamp">Validator Spec: automatic tests on every pull request, plus a manual click-through for phone changes.</p>
+    <ul class="pts">
+      <li><code>npm test</code> runs 214 tests on the guard, the hub and the phone app's text and icon builders.</li>
+      <li>GitHub runs the same tests on every pull request and on <code>main</code>.</li>
+      <li>Each phone change is also clicked through in a phone-size browser before it merges.</li>
+      <li>Not covered: a real phone on venue Wi-Fi, and real answers from Gemini or Grok.</li>
+    </ul>
+    <div id="validation-commands"><pre><code>npm test
+npm run demo:tunnel</code></pre></div>
+  </section>
+
+  <section id="notes">
+    <h2>Notes</h2>
+    <ul class="pts">
+      <li>The page uses the app's own black and green, so the plan and the product look like one thing.</li>
+      <li>Every phone picture is a real screenshot of the current app in demo mode.</li>
+      <li>The comparison, connection and guard boards are day-one drawings, recoloured. Their facts still hold.</li>
+      <li>No generated images were added. Every fact in a picture is also written in text.</li>
+    </ul>
+  </section>
+
+  <section id="changelog">
+    <h2>Changelog</h2>
+    <ol class="log" id="amend">
+      <li><time datetime="2026-11-14">Nov 14</time> <b>Core loop working.</b> A real Claude Code command was held, answered from a phone through the tunnel, and ran.</li>
+      <li><time datetime="2026-11-14">Nov 14</time> <b>Review pass.</b> Nine bugs fixed, including guard bypasses and the printed token.</li>
+      <li><time datetime="2026-11-14">Nov 14</time> <b>Repo shared.</b> Moved to Zazu's GitHub, Ethan added, issues 1 to 7 opened.</li>
+      <li><time datetime="2026-11-14">Nov 14</time> <b>Teamwork set up.</b> Automatic tests (PR 12), task / sync / ship commands and push guard (PR 13).</li>
+      <li><time datetime="2026-11-14">Nov 14</time> <b>Phone redesign.</b> Fire effects (PR 8), light look (PR 10), then black and green with plain-English cards and redirect (PR 17).</li>
+      <li><time datetime="2026-11-14">Nov 14</time> <b>More agents and safety.</b> Lock-screen alerts (PR 11), Gemini and Grok (PR 15), AWS vault (PR 18), guard hardening (PRs 23, 27), model explanations (PR 26).</li>
+      <li><time datetime="2026-11-14">Nov 14</time> <b>Owners and icons.</b> Owner labels (PRs 22, 25), folder cards (PR 29), decision faces (PR 36), one character per owner (PR 38).</li>
+      <li><time datetime="2026-11-14">Nov 14</time> <b>Demo kit.</b> Stage pitch (PR 30) and 85-second backup video (PRs 33, 35).</li>
+      <li><time datetime="2026-11-15">Nov 15</time> <b>Plan page rebuilt.</b> Added status, goal contract, decisions, open questions, documents and this changelog. New screenshots and recoloured boards. Sections touched: all.</li>
+    </ol>
+  </section>
+</div>
+</body>
+</html>

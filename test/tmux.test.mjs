@@ -1,0 +1,24 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { validTarget, typeInto, interrupt } from '../hub/tmux.mjs';
+
+test('validTarget validates standard tmux pane and window identifiers', () => {
+  assert.equal(validTarget('%0'), true);
+  assert.equal(validTarget('%12'), true);
+  assert.equal(validTarget('ashr:1'), true);
+  assert.equal(validTarget('session-name:win.0'), true);
+
+  assert.equal(validTarget(''), false);
+  assert.equal(validTarget(null), false);
+  assert.equal(validTarget(123), false);
+  assert.equal(validTarget('bad;target'), false);
+  assert.equal(validTarget('ashr:1 | sh'), false);
+  assert.equal(validTarget('`rm -rf /`'), false);
+});
+
+test('typeInto and interrupt reject invalid targets without invoking tmux', async () => {
+  await assert.rejects(() => typeInto('bad;target', 'ls'), /invalid tmux target/);
+  await assert.rejects(() => typeInto(null, 'ls'), /invalid tmux target/);
+  await assert.rejects(() => interrupt('bad;target'), /invalid tmux target/);
+  await assert.rejects(() => interrupt(''), /invalid tmux target/);
+});
