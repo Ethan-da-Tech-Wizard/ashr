@@ -5,8 +5,8 @@
 // reply cannot be parsed, the tool call is allowed so that ashr outages never block the user.
 // Only an explicit deny from the hub stops the call.
 //
-// How it fits: registered as a Gemini CLI BeforeTool/notification hook (see docs and
-//   scripts/start-agents.sh). Claude Code needs no script because it has native HTTP hooks
+// How it fits: meant to be registered as a Gemini CLI BeforeTool/notification hook in
+//   Gemini's own settings (no script in this repo installs that registration for you). Claude Code needs no script because it has native HTTP hooks
 //   (hooks/claude-settings.json). This script is the Gemini equivalent: it converts Gemini's hook
 //   JSON into the same request the hub's /hook/permission and /hook/event expect, so one hub, one
 //   guard (guard/rules.mjs) and one phone UI serve every agent. Runs once per hook invocation (a
