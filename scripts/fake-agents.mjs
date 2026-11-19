@@ -7,12 +7,16 @@ const PORT = process.env.PORT || 7777;
 const TOKEN = process.env.ASHR_TOKEN || '';
 const ONCE = process.argv.includes('--once');
 const LOOP = process.argv.includes('--loop') && !ONCE;
+// Time compression factor applied to every sleep: 1 = real time, 10 = ten times faster.
 const scale = (Number(process.env.FAKE_SPEED) || 1) * (ONCE ? 10 : 1);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms / scale));
 const BASE = `http://127.0.0.1:${PORT}`;
+// How long an agent "works" after the phone answers before it is shown as done.
 const DONE_AFTER_MS = 6000;
+// Fallback pause when no token lets us watch for the phone's decision.
 const UNWATCHED_WAIT_MS = 8000;
 
+// Scripted cast. `at` = ms into the timeline when the agent asks for approval; the asks cover high-risk (secret read, exfiltration) and medium-risk (install, push) examples.
 const AGENTS = [
   { id: 'claude-demo01', agent: 'claude', title: 'fix the login tests', cwd: '/repo/wt-login', at: 14000,
     ask: { tool: 'Bash', summary: 'cat .env', risk: 'high', reasons: ['touches env file or key', 'may expose secrets'],
@@ -50,9 +54,11 @@ const snapshot = () => retry('GET /api/state', async () => {
   return res.json();
 });
 
+// Timeline prefix in scaled seconds, so logs read the same at any speed.
 const stamp = (t0) => `[t=${String(Math.round(((Date.now() - t0) * scale) / 1000)).padStart(2)}s]`;
 
 // Resolves once the session's ask has appeared and then closed (the phone decided).
+// Poll the hub every 400 ms (scaled). `seen` guards against returning before the ask has appeared.
 async function waitForDecision(id) {
   let seen = false;
   for (;;) {
@@ -63,6 +69,7 @@ async function waitForDecision(id) {
   }
 }
 
+// Play one agent's life: working, then a request, wait for the phone, working again, done.
 async function run(a, t0) {
   const base = { id: a.id, agent: a.agent, title: a.title, cwd: a.cwd, ...(a.owner ? { owner: a.owner } : {}) };
   console.log(`${stamp(t0)} ${a.id}: working`);

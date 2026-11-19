@@ -2,16 +2,21 @@
 // ashr runner: execute any command under ashr's protective guard.
 // Usage: node scripts/ashr-exec.mjs [--agent gemini|codex|claude] [--title "Task"] <command> [args...]
 // Example: node scripts/ashr-exec.mjs --agent gemini rm -rf ./tmp
+// How it works: the command is NOT run until the hub approves it. The hub scores
+// the command and, if risky, waits for a decision from the phone. Exit status is
+// that of the command, or 1 if it was denied or the hub could not be reached.
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 
+// Settings default from environment variables and can be overridden by flags that must come before the command.
 const args = process.argv.slice(2);
 let agent = process.env.ASHR_AGENT || 'gemini';
 let title = process.env.ASHR_TITLE || '';
 let port = Number(process.env.PORT) || 7777;
 let token = process.env.ASHR_AGENT_TOKEN || '';
 
+// Consume leading --agent/--title/--port/--token flags; the first non-flag word starts the real command.
 while (args.length > 0) {
   if (args[0] === '--agent' && args[1]) {
     agent = args[1];
@@ -35,11 +40,15 @@ if (args.length === 0) {
   process.exit(1);
 }
 
+// Joined only for display and scoring; execution below uses the original argv array.
 const command = args.join(' ');
+// Stable per-parent id so repeated commands from one agent group under one phone tile.
 const sessionId = process.env.ASHR_SESSION_ID || `${agent}-${process.ppid || process.pid}`;
 const cwd = process.cwd();
 if (!title) title = path.basename(cwd);
 
+// Pick the credential to send: an explicit token, or (when ASHR_AUTO_TOKEN=1) a fresh
+// scoped token requested from the hub's localhost-only endpoint. Returns '' if none.
 async function obtainToken() {
   if (token) return token;
   if (process.env.ASHR_AUTO_TOKEN === '1') {
@@ -74,6 +83,8 @@ async function obtainToken() {
   return '';
 }
 
+// POST the command to /hook/permission and resolve with the hub's decision
+// ({ behavior: 'allow' | 'deny', message? }). Rejects on HTTP errors or an unreachable hub.
 async function askPermission() {
   const activeToken = await obtainToken();
   return new Promise((resolve, reject) => {
@@ -137,6 +148,7 @@ try {
     process.exit(1);
   }
 
+  // shell: false means arguments are passed straight to the program, with no shell expansion.
   // Allowed: run the command with inherited stdio
   const child = spawn(args[0], args.slice(1), {
     stdio: 'inherit',

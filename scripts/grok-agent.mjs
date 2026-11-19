@@ -5,6 +5,9 @@
 import { execFile } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+// Flow: send the prompt and tool schema to the model; for every tool call it proposes,
+// ask the ashr hub first and only execute if the phone allows it. This is a single
+// round (no loop feeding results back) to keep the demo easy to follow.
 import { loadKeys } from '../hub/keys.mjs';
 
 const keys = loadKeys();
@@ -21,6 +24,7 @@ if (!apiKey) {
 
 const prompt = process.argv.slice(2).join(' ') || 'Run project tests and inspect code quality.';
 
+// Tool schema in OpenAI function-calling format. The names (Bash/Read/Write) match what the hub's guard recognises.
 const TOOLS = [
   {
     type: 'function',
@@ -63,6 +67,7 @@ const TOOLS = [
   },
 ];
 
+// Ask the hub for permission. Fails closed: any error or missing answer is a deny.
 async function askAshr(tool_name, tool_input) {
   try {
     const res = await fetch(`http://127.0.0.1:${port}/hook/permission`, {
@@ -88,6 +93,7 @@ async function askAshr(tool_name, tool_input) {
   }
 }
 
+// Execute an approved tool. Output is truncated (reads at 10,000 chars, 30 s command timeout) to bound what is printed.
 function runTool(name, input) {
   return new Promise((resolve) => {
     if (name === 'Bash') {

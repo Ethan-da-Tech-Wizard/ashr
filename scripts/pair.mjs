@@ -1,6 +1,7 @@
 // Asks the running hub for a fresh one-time pair code. The hub prints the URL + QR; we print the URL too.
 // Usage: npm run pair   (env PORT default 7777)
 const PORT = process.env.PORT || 7777;
+// The endpoint is localhost-only on the hub, so this only works on the laptop running it.
 try {
   const res = await fetch(`http://127.0.0.1:${PORT}/hook/pair-code`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
   if (!res.ok) throw new Error(`hub said ${res.status}`);

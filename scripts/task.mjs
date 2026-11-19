@@ -7,16 +7,20 @@ import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, join, basename } from 'node:path';
 
+// Run git with an argument array (no shell) and return trimmed output; throws on non-zero exit.
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
 const lines = (text) => text.split('\n').filter(Boolean);
 const say = (msg) => console.log(`ashr: ${msg}`);
 const stop = (msg) => { console.error(`ashr: ${msg}`); process.exit(1); };
+// Branch names must be <person>/<kebab-case-topic>, so it is always clear whose work a branch is.
 const BRANCH = /^(zazu|ethan)\/[a-z0-9][a-z0-9-]*$/;
 
+// Point git at the repo's .githooks folder (it contains the pre-push guard) the first time any command runs.
 function installHooks() {
   if (git('config', '--default', '', '--get', 'core.hooksPath') !== '.githooks') git('config', 'core.hooksPath', '.githooks');
 }
 
+// Create a branch from the latest origin/main, either in a separate worktree folder (default) or in place with --here.
 function task(name, here) {
   if (!BRANCH.test(name || '')) stop('name the branch zazu/<thing> or ethan/<thing>, for example: npm run task -- zazu/pitch');
   git('fetch', '--quiet', 'origin');
@@ -27,6 +31,7 @@ function task(name, here) {
     return say(`on ${name}, started from the latest main.`);
   }
   const root = git('rev-parse', '--show-toplevel');
+  // Sibling folder named <repo>-<topic>, so agents on different branches never share a working tree.
   const dir = join(dirname(root), `${basename(root)}-${name.split('/')[1]}`);
   if (existsSync(dir)) stop(`folder ${dir} already exists.`);
   git('worktree', 'add', '--quiet', '-b', name, dir, 'origin/main');
@@ -45,11 +50,13 @@ function overlaps(branch) {
     .filter((o) => o.files.length);
 }
 
+// Merge the latest main into the current branch, run the tests, and warn about overlapping files. Returns the branch name, or null on main.
 function sync() {
   const branch = git('branch', '--show-current');
   if (git('status', '--porcelain')) stop('commit your changes first, then sync.');
   git('fetch', '--quiet', '--prune', 'origin');
   if (branch === 'main') {
+    // On main only fast-forward is allowed, so local main never diverges.
     git('merge', '--quiet', '--ff-only', 'origin/main');
     say('main is up to date. Start work with: npm run task -- <you>/<thing>');
     return null;
@@ -60,6 +67,7 @@ function sync() {
     stop('main changed the same lines you did. Fix the files marked above, commit, then run npm run sync again.');
   }
   try {
+    // Use the same node binary to run the built-in test runner; only errors are shown.
     execFileSync(process.execPath, ['--test', '--test-reporter=dot'], { stdio: ['ignore', 'ignore', 'inherit'] });
   } catch {
     stop('tests fail after pulling in main. Run npm test, fix them, then sync again.');
