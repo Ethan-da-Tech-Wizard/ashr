@@ -1,3 +1,6 @@
+// File: test/hub.test.mjs
+// Purpose: End-to-end tests of the hub: start a real server on an ephemeral port and exercise
+// permission hooks, auto-approval of low-risk calls, holding and deciding asks, and state snapshots.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startHub } from '../hub/server.mjs';
@@ -5,6 +8,7 @@ import { startHub } from '../hub/server.mjs';
 let hub, base;
 const TOKEN = 'test-token';
 const auth = { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' };
+// Helper: POST JSON to the test hub, authenticated by default.
 const post = (path, body, headers = auth) => fetch(base + path, { method: 'POST', headers, body: JSON.stringify(body) });
 const perm = (tool_name, tool_input) => ({
   hook_event_name: 'PermissionRequest', session_id: 'abc123def', cwd: '/repo/wt', tool_name, tool_input,

@@ -1,3 +1,6 @@
+// File: test/owner.test.mjs
+// Purpose: Tests for resolving the hub owner's GitHub name (env, gh, git, OS user) and for how
+// new sessions inherit it.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveOwner, validOwner } from '../hub/owner.mjs';

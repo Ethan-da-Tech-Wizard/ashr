@@ -1,3 +1,6 @@
+// File: test/agents.test.mjs
+// Purpose: Tests for the phone app's agent tile builders (owner label, photo URL, HTML escaping).
+// These are pure string functions, so they run in node without a browser.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ownerName, ownerPhoto, agentHtml, tileHtml } from '../app/agents.js';

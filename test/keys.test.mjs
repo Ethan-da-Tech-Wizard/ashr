@@ -1,3 +1,5 @@
+// File: test/keys.test.mjs
+// Purpose: Tests for the API key loader (hub/keys.mjs): shape of loadKeys() and saveKey() validation.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { loadKeys, saveKey } from '../hub/keys.mjs';

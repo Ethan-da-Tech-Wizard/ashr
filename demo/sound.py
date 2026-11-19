@@ -20,6 +20,8 @@ import urllib.error
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Network note: this is the only demo script that contacts an outside service (ElevenLabs), and only
+# when a voice or music clip is missing from the cache. The key comes from the environment.
 import synth  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -28,10 +30,12 @@ VIDEO_IN = os.path.join(ROOT, "docs", "demo-60s.mp4")
 VIDEO_OUT = os.path.join(ROOT, "docs", "demo-60s-sound.mp4")
 API = "https://api.elevenlabs.io"
 VOICE_NAME = "Brian"                    # calm, low, American
+# Voice id to use if the voice list cannot be fetched.
 VOICE_FALLBACK = "nPczCjzI2devNBz1zQrb"
 LENGTH = 60.0
 
 # (start second, latest end second, file name, words). "Asher" is how the name is said aloud.
+# Narration lines. Each window must match its scene in demo/record.py; a clip longer than its window is sped up, up to 1.25x.
 VOICE = [
     (0.6, 5.2, "vo-1-title", "This is Asher. It keeps your coding agents in order."),
     (5.9, 12.8, "vo-2-problem", "You start a few agents and walk away. One by one, they stop, and wait for permission."),
@@ -59,6 +63,9 @@ MUSIC = ("music", "Minimal modern electronic underscore for a tech product demo.
 
 
 def call(path: str, body: dict, query: str = "") -> bytes:
+    """POST JSON to the ElevenLabs API and return the raw response bytes (audio).
+    Exits with a helpful message if no API key is set, so a missing key never produces a half-built video.
+    """
     key = os.environ.get("ELEVENLABS_API_KEY")
     if not key:
         sys.exit("ELEVENLABS_API_KEY is not set, and a clip is missing. Use --mix to mix cached clips only.")
@@ -72,6 +79,7 @@ def call(path: str, body: dict, query: str = "") -> bytes:
 
 
 def voice_id() -> str:
+    """Look up the id of the configured voice by first name; fall back to a fixed id on any network or parse problem."""
     key = os.environ.get("ELEVENLABS_API_KEY", "")
     try:
         req = urllib.request.Request(f"{API}/v1/voices", headers={"xi-api-key": key})
@@ -91,6 +99,7 @@ def clip(name: str) -> str:
 
 
 def make_clips() -> None:
+    """Create any missing audio clips (voice, effects, music). Existing clips are never regenerated, so re-runs are free."""
     os.makedirs(AUDIO, exist_ok=True)
     vid = None
     for _start, _end, name, words in VOICE:
@@ -116,12 +125,16 @@ def make_clips() -> None:
 
 
 def seconds_of(path: str) -> float:
+    """Duration of a media file in seconds, via ffprobe."""
     out = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path],
                          capture_output=True, text=True, check=True).stdout
     return float(out.strip())
 
 
 def mix() -> None:
+    """Build one ffmpeg filter graph that places every voice line and effect at its start time, ducks the
+    music under the voice (sidechain compression), normalises loudness, and muxes the result onto the video.
+    """
     inputs, filters, voice_tags, fx_tags = ["-i", VIDEO_IN], [], [], []
     n = 1
     for start, end, name, _words in VOICE:

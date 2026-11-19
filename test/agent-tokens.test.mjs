@@ -1,3 +1,6 @@
+// File: test/agent-tokens.test.mjs
+// Purpose: Tests for per-agent session tokens: issuing, scoping by capability and agent,
+// expiry and revocation, in the auth store and through the running hub (node:test, no network).
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createAuth } from '../hub/auth.mjs';

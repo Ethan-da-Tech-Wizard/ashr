@@ -1,3 +1,6 @@
+// File: test/ai-explain.test.mjs
+// Purpose: Tests for the AI Quick Explain helper: request formatting for Gemini and Grok using a
+// mock fetch, the offline simulated fallback, and the /api/explain route. No real API calls are made.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { requestAiExplanation, simulateExplanation } from '../hub/ai-explain.mjs';

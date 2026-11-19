@@ -12,20 +12,25 @@ import numpy as np
 from scipy.io import wavfile
 from scipy.signal import butter, lfilter, lfilter_zi
 
+# CD sample rate in Hz. Every time value below is in seconds and is converted with RATE.
 RATE = 44100
 AUDIO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "audio")
+# Fixed seed so the generated noise, and therefore the audio files, are identical on every run.
 RNG = np.random.default_rng(7)
 
 
 def t(seconds: float) -> np.ndarray:
+    """Time axis in seconds, one value per sample."""
     return np.arange(int(seconds * RATE)) / RATE
 
 
 def decay(seconds: float, half_life: float) -> np.ndarray:
+    """Exponential decay envelope that halves every `half_life` seconds."""
     return np.exp(-t(seconds) * np.log(2) / half_life)
 
 
 def fade(x: np.ndarray, fade_in: float = 0.005, fade_out: float = 0.02) -> np.ndarray:
+    """Return a copy with short linear fades at both ends, which avoids clicks."""
     y = x.copy()
     a, b = int(fade_in * RATE), int(fade_out * RATE)
     if a:
@@ -36,11 +41,13 @@ def fade(x: np.ndarray, fade_in: float = 0.005, fade_out: float = 0.02) -> np.nd
 
 
 def lowpass(x: np.ndarray, cutoff: float, order: int = 2) -> np.ndarray:
+    """Butterworth low-pass filter; the cutoff is capped just under Nyquist."""
     b, a = butter(order, min(cutoff, RATE * 0.45) / (RATE / 2), "low")
     return lfilter(b, a, x)
 
 
 def highpass(x: np.ndarray, cutoff: float) -> np.ndarray:
+    """Second-order Butterworth high-pass filter."""
     b, a = butter(2, cutoff / (RATE / 2), "high")
     return lfilter(b, a, x)
 
@@ -50,6 +57,7 @@ def swept_noise(seconds: float, cutoffs: list[float]) -> np.ndarray:
     noise = RNG.standard_normal(int(seconds * RATE))
     chunks = np.array_split(noise, 40)
     curve = np.interp(np.linspace(0, 1, len(chunks)), np.linspace(0, 1, len(cutoffs)), cutoffs)
+    # Filter in 40 chunks, carrying the filter state across chunk boundaries so the moving cutoff does not click.
     out, state = [], None
     for chunk, cutoff in zip(chunks, curve):
         b, a = butter(2, cutoff / (RATE / 2), "low")
@@ -60,17 +68,20 @@ def swept_noise(seconds: float, cutoffs: list[float]) -> np.ndarray:
 
 
 def sweep(seconds: float, f0: float, f1: float) -> np.ndarray:
+    """Sine wave whose frequency glides from f0 to f1 Hz (phase is the running sum of frequency)."""
     freq = np.linspace(f0, f1, int(seconds * RATE))
     return np.sin(2 * np.pi * np.cumsum(freq) / RATE)
 
 
 def bell(freq: float, seconds: float, half_life: float) -> np.ndarray:
+    """Bell-like tone: a fundamental plus slightly inharmonic overtones (2.01x, 3.9x) with a decaying envelope."""
     x = t(seconds)
     tone = np.sin(2 * np.pi * freq * x) + 0.35 * np.sin(2 * np.pi * freq * 2.01 * x) + 0.12 * np.sin(2 * np.pi * freq * 3.9 * x)
     return tone * decay(seconds, half_life)
 
 
 def place(total: float, parts: list[tuple[float, np.ndarray]]) -> np.ndarray:
+    """Mix sounds into a silent buffer of `total` seconds at the given start times, truncating any overrun."""
     out = np.zeros(int(total * RATE))
     for start, part in parts:
         i = int(start * RATE)
@@ -80,33 +91,39 @@ def place(total: float, parts: list[tuple[float, np.ndarray]]) -> np.ndarray:
 
 
 def tap() -> np.ndarray:
+    """Short UI tap: a quick falling blip plus a high-passed noise click."""
     body = sweep(0.05, 1700, 800) * decay(0.05, 0.008)
     click = highpass(RNG.standard_normal(int(0.012 * RATE)), 3000) * decay(0.012, 0.003) * 0.4
     return fade(place(0.09, [(0, body), (0, click)]), 0.001, 0.02)
 
 
 def whoosh() -> np.ndarray:
+    """Scene-change swoosh: noise with a rising then falling filter, shaped by a Hann window."""
     x = swept_noise(0.75, [300, 1200, 4200, 2000, 500])
     return fade(highpass(x, 180) * np.hanning(len(x)) ** 1.5, 0.01, 0.05)
 
 
 def deny() -> np.ndarray:
+    """Deny: a low falling thud with a dying noise flare on top (the card burning)."""
     thud = sweep(0.55, 95, 42) * decay(0.55, 0.11)
     flare = swept_noise(1.3, [2600, 1500, 700, 300]) * decay(1.3, 0.28) * 0.5
     return fade(place(1.5, [(0, thud), (0.05, flare)]), 0.002, 0.2)
 
 
 def allow() -> np.ndarray:
+    """Allow: two rising bell notes (E5 then B5)."""
     return fade(place(1.3, [(0, bell(659.25, 1.0, 0.16) * 0.7), (0.13, bell(987.77, 1.1, 0.2) * 0.7)]), 0.002, 0.2)
 
 
 def redirect() -> np.ndarray:
+    """Redirect: a single short A4 ping, deliberately neutral."""
     x = t(0.8)
     note = (np.sin(2 * np.pi * 440 * x) + 0.3 * np.sin(2 * np.pi * 1760 * x)) * decay(0.8, 0.07)
     return fade(note * 0.8, 0.002, 0.1)
 
 
 def intro() -> np.ndarray:
+    """Title sting: a 2.1 s riser (noise plus rising hum) ending in a low chord hit."""
     rise = swept_noise(2.1, [200, 500, 1500, 5000]) * np.linspace(0, 1, int(2.1 * RATE)) ** 2 * 0.35
     hum = sweep(2.1, 55, 110) * np.linspace(0, 1, int(2.1 * RATE)) ** 2 * 0.4
     hit = sweep(1.2, 70, 50) * decay(1.2, 0.3) + chord([110, 164.81, 220, 329.63], 1.2) * decay(1.2, 0.35) * 0.5
@@ -124,6 +141,9 @@ def chord(freqs: list[float], seconds: float) -> np.ndarray:
 
 
 def music(seconds: float = 60.0, bpm: float = 100.0) -> np.ndarray:
+    """Synthesise the background bed: pads on a four-chord loop, then bass pulses, ticks and kicks added in
+    stages that line up with the story's scenes (see the thresholds below).
+    """
     beat = 60 / bpm
     bar = 4 * beat
     # A minor 7, F major 7, C major, G major: two bars each.
@@ -140,6 +160,7 @@ def music(seconds: float = 60.0, bpm: float = 100.0) -> np.ndarray:
         start = index * bar
         if start >= seconds:
             break
+        # Fade each two-bar pad in and out over 0.6 s so chord changes are smooth.
         swell = np.minimum(1, t(2 * bar) / 0.6) * np.minimum(1, (2 * bar - t(2 * bar)) / 0.6)
         pad = chord(notes, 2 * bar) * swell * 0.5
         parts = [(start, pad)]
@@ -164,18 +185,21 @@ def music(seconds: float = 60.0, bpm: float = 100.0) -> np.ndarray:
 
 
 def save(name: str, x: np.ndarray, peak: float = 0.9) -> None:
+    """Normalise to `peak` of full scale and write a 16-bit mono WAV into demo/audio/."""
     os.makedirs(AUDIO, exist_ok=True)
     x = x / (np.max(np.abs(x)) or 1) * peak
     wavfile.write(os.path.join(AUDIO, f"{name}.wav"), RATE, (x * 32767).astype(np.int16))
 
 
 def make_effects() -> None:
+    """Generate all six sound effects named in the CUES table of demo/sound.py."""
     for name, maker in {"fx-tap": tap, "fx-whoosh": whoosh, "fx-deny": deny, "fx-allow": allow,
                         "fx-redirect": redirect, "fx-intro": intro}.items():
         save(name, maker())
 
 
 def make_music() -> None:
+    """Generate the music bed as demo/audio/music.wav."""
     save("music", music(), 0.8)
 
 

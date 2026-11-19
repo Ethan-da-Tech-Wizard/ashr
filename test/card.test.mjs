@@ -1,3 +1,6 @@
+// File: test/card.test.mjs
+// Purpose: Tests for cardHtml(): that the approval card markup includes the agent, owner, risk and
+// headline, and that untrusted text is escaped.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { cardHtml } from '../app/card.js';

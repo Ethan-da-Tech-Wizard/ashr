@@ -1,3 +1,6 @@
+// File: test/notify.test.mjs
+// Purpose: Tests for ntfy phone notifications: when notifyAsk sends, skips, and handles network errors
+// (fetch is mocked).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { notifyAsk } from '../hub/notify.mjs';

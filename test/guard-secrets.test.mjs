@@ -1,3 +1,7 @@
+// File: test/guard-secrets.test.mjs
+// Purpose: Tests for secret detection (built-in patterns, entropy, and the optional external
+// git-secret-shield scanner) and how findings affect the risk score. Fake keys are assembled
+// at runtime so this file never contains a real-looking secret literal.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';

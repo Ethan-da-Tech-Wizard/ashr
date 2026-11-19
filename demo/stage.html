@@ -100,10 +100,12 @@
     { step: "Redirect", eyebrow: "Or neither", big: "Tell it what<br>to do <em>instead</em>.", sub: "Skip the step and send the agent a better plan." },
     { step: "Owners", eyebrow: "Two people, many agents", big: "See <em>who owns</em><br>every agent.", sub: "The character is the person. The colour is the agent." },
   ];
+  // Shorthand for element lookup. Everything below is exposed on `window` so demo/record.py can call it through page.evaluate().
   const $ = (id) => document.getElementById(id);
   $("caption").innerHTML = SCENES.map((s, i) => `<div class="cap" data-i="${i}">
       <div class="eyebrow">${s.eyebrow}</div><h2 class="big">${s.big}</h2><p class="sub">${s.sub}</p></div>`).join("");
 
+  // Show scene i's caption (hiding the others) and update the small step label.
   window.scene = (i) => {
     document.querySelectorAll(".cap").forEach((c) => c.classList.toggle("on", Number(c.dataset.i) === i));
     $("step").textContent = SCENES[i]?.step || "";
@@ -115,6 +117,7 @@
     Object.assign(el.style, { left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${h}px`, borderRadius: `${r}px` });
     el.classList.add("on");
   };
+  // Move the fake finger dot to page pixel (x, y). `down` shows the pressed look; `fast` disables the glide transition during drags.
   window.touch = (x, y, down = false, fast = false) => {
     const f = $("finger");
     f.classList.toggle("fast", fast);
@@ -123,10 +126,12 @@
     f.classList.toggle("down", down);
   };
   window.lift = () => $("finger").classList.remove("on", "down");
+  // The phone iframe loads the real app in demo mode (?demo=1), so no hub is needed.
   window.loadApp = () => { $("app").src = "../app/?demo=1"; };
   window.showPhone = () => $("phone").classList.remove("off");
   window.openCover = (on) => $("cover-open").classList.toggle("on", on);
   window.endCover = (on) => $("cover-end").classList.toggle("on", on);
+  // Starts the CSS progress bar animation along the bottom.
   window.startBar = () => $("bar").classList.add("run");
 
   // Hand preview: arrow keys step through the scenes.

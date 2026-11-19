@@ -1,3 +1,5 @@
+// File: test/app-touch.test.mjs
+// Purpose: Regression test that reads app/styles.css as text to confirm the swipe-related CSS is present.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';

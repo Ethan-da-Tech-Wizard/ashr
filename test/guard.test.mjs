@@ -1,8 +1,13 @@
+// File: test/guard.test.mjs
+// Purpose: Tests for the risk scorer (guard/rules.mjs and guard/bash.mjs): which tool calls and shell
+// commands come out low, medium or high. The HIGH and LOW lists below are regression tables of
+// commands that once slipped through.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { score, scoreSync } from '../guard/rules.mjs';
 
 const cwd = '/repo/wt';
+// Helper: score a shell command as if run in the project directory /repo/wt.
 const bash = (command) => score({ tool: 'Bash', input: { command }, cwd });
 
 test('rm -rf is high', async () => {

@@ -1,3 +1,5 @@
+// File: test/tmux.test.mjs
+// Purpose: Tests for tmux target validation and for rejecting bad targets before tmux is ever invoked.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { validTarget, typeInto, interrupt } from '../hub/tmux.mjs';

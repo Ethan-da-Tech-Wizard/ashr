@@ -1,3 +1,5 @@
+// File: test/explain.test.mjs
+// Purpose: Tests for the plain-English request explainer used on approval cards (headlines and points).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { explain } from '../app/explain.js';

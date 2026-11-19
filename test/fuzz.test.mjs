@@ -1,3 +1,6 @@
+// File: test/fuzz.test.mjs
+// Purpose: Fuzz and abuse tests that throw malformed, oversized and hostile input at the running hub's
+// HTTP endpoints. The hub must answer with a clean 4xx and must never crash or hang.
 import { test, before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';

@@ -1,3 +1,5 @@
+// File: test/hub-auth.test.mjs
+// Purpose: Tests for hub authentication: pairing codes, token checks on /api, and localhost-only /hook routes.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startHub } from '../hub/server.mjs';

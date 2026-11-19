@@ -5,19 +5,26 @@ Needs Python with Playwright and ffmpeg on the laptop. Nothing here ships with t
     python3 demo/record.py            # record
     python3 demo/record.py --dry      # run the timeline without writing a video
 """
+# How it works: a local static server hosts demo/stage.html (a mock stage with the real phone app in an
+# iframe). Playwright drives it on a timed script, Chrome's screencast captures JPEG frames with
+# timestamps, and ffmpeg's concat demuxer turns them into a 30 fps MP4, honouring each frame's real duration.
 import asyncio, base64, functools, glob, http.server, os, shutil, subprocess, sys, tempfile, threading, time
 from playwright.async_api import async_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "docs", "demo-60s.mp4")
+# Fixed local port for the throwaway static server (bound to 127.0.0.1 only).
 PORT = 7801
+# Total video length in seconds; also used to pad the last frame and to trim ffmpeg output.
 LENGTH = 60.0
 W, H = 1920, 1080
+# CSS selector of the front card in the stack (depth 0).
 TOP = '.card[data-depth="0"]'
 DRY = "--dry" in sys.argv
 
 
 def serve():
+    """Start a background static file server rooted at the repo and return it (so main() can shut it down)."""
     handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=ROOT)
     handler.log_message = lambda *a: None
     server = http.server.ThreadingHTTPServer(("127.0.0.1", PORT), handler)
@@ -26,6 +33,7 @@ def serve():
 
 
 def browser_path():
+    """Find Playwright's cached headless Chromium on macOS; None lets Playwright use its default."""
     found = glob.glob(os.path.expanduser("~/Library/Caches/ms-playwright/chromium_headless_shell-*/*/chrome-headless-shell"))
     return sorted(found)[-1] if found else None
 
@@ -40,6 +48,7 @@ class Show:
         self.notes = []
 
     async def at(self, second):
+        """Sleep until `second` on the show clock. Falling more than 0.4 s behind is recorded in `notes` so a slow run is visible."""
         wait = self.t0 + second - time.monotonic()
         if wait < -0.4:
             self.notes.append(f"late by {-wait:.1f}s at {second}s")
@@ -47,19 +56,23 @@ class Show:
             await asyncio.sleep(wait)
 
     async def js(self, code):
+        """Run JavaScript in the stage page (its helper functions such as touch(), spotAt(), scene())."""
         await self.page.evaluate(code)
 
     async def center(self, selector):
+        """Page coordinates of the centre of the first element matching `selector` inside the app iframe."""
         box = await self.app.locator(selector).first.bounding_box()
         return box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
 
     async def ring(self, selector, pad=8, radius=30):
+        """Highlight an element with the stage's spotlight ring, clamped horizontally to the phone's screen area."""
         box = await self.app.locator(selector).first.bounding_box()
         left = max(box["x"] - pad, 1220)
         right = min(box["x"] + box["width"] + pad, 1646)
         await self.js(f"spotAt({left}, {box['y'] - pad}, {right - left}, {box['height'] + 2 * pad}, {radius})")
 
     async def tap(self, selector, hold=0.25):
+        """Show a touch dot, then press the element for real so the app reacts exactly as it would to a finger."""
         x, y = await self.center(selector)
         await self.js(f"touch({x}, {y})")
         await asyncio.sleep(0.55)
@@ -71,6 +84,7 @@ class Show:
         await self.js(f"touch({x}, {y})")
 
     async def swipe(self, selector, dx):
+        """Drag the element horizontally by `dx` pixels with an ease-out curve (a real mouse drag, so the swipe code runs)."""
         box = await self.app.locator(selector).first.bounding_box()
         x, y = box["x"] + box["width"] / 2, box["y"] + 150
         await self.js(f"touch({x}, {y})")
@@ -91,6 +105,9 @@ class Show:
 
 
 async def play(show):
+    """The scripted timeline. Each `at(second)` line waits for that moment and triggers the scene, so the
+    timing matches the narration cues in demo/sound.py.
+    """
     s = show
     await s.js("startBar()")
     # 0-5.500: title
@@ -127,6 +144,7 @@ async def play(show):
 
 
 async def main():
+    """Record (or with --dry just run) the timeline, check the app ended in a sane state, and encode the video."""
     server = serve()
     frames = []
     async with async_playwright() as p:
@@ -137,8 +155,10 @@ async def main():
         await page.goto(f"http://127.0.0.1:{PORT}/demo/stage.html")
         await page.wait_for_timeout(500)
 
+        # Chrome DevTools Protocol session, used for the screencast feature.
         cdp = await page.context.new_cdp_session(page)
 
+        # Store each screencast frame and acknowledge it, otherwise Chrome stops sending more.
         def on_frame(ev):
             frames.append((ev["metadata"]["timestamp"], ev["data"]))
             asyncio.ensure_future(cdp.send("Page.screencastFrameAck", {"sessionId": ev["sessionId"]}))
@@ -160,6 +180,7 @@ async def main():
     if DRY:
         return
 
+    # Write frames to a temp folder and list them for ffmpeg with their on-screen durations (variable frame rate source).
     tmp = tempfile.mkdtemp(prefix="ashr-anim-")
     start = frames[0][0]
     lines = []
@@ -169,6 +190,7 @@ async def main():
             f.write(base64.b64decode(data))
         end = frames[i + 1][0] if i + 1 < len(frames) else start + LENGTH
         lines += [f"file '{name}'", f"duration {max(end - ts, 0.001):.4f}"]
+    # The concat demuxer ignores the duration of the final entry, so the last file is listed twice.
     lines.append(f"file '{name}'")
     listing = os.path.join(tmp, "list.txt")
     with open(listing, "w") as f:

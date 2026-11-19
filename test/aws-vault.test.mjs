@@ -1,3 +1,6 @@
+// File: test/aws-vault.test.mjs
+// Purpose: Tests for the S3 audit vault: SigV4 signing helpers, the hash chain between records,
+// dry-run mode without credentials, and uploads against a local mock HTTP server.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';

@@ -12,6 +12,9 @@ import { spawn, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+// Requirements on the machine: Chromium and ffmpeg on PATH. The hub runs in-process
+// (no network needed); the browser drives the real phone UI, and every frame is
+// captured over the DevTools Protocol, so output is deterministic frame by frame.
 import { startHub } from '../hub/server.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -19,7 +22,9 @@ const __dirname = path.dirname(__filename);
 const ROOT = path.resolve(__dirname, '..');
 const DOCS_DIR = path.resolve(ROOT, 'docs');
 
+// Dedicated port (not 7777) so recording never collides with a hub you are using.
 const PORT = Number(process.env.PORT) || 7788;
+// Fixed demo token for this throwaway recording hub only; it protects nothing real.
 const TOKEN = 'ashr-stage-backup-demo-2026';
 const FPS = 20;
 const TOTAL_FRAMES = 1700; // Exactly 85.00 seconds at 20 fps
@@ -28,6 +33,7 @@ const MP4_PATH = path.join(DOCS_DIR, 'demo.mp4');
 const WEBM_PATH = path.join(DOCS_DIR, 'demo.webm');
 const GIF_PATH = path.join(DOCS_DIR, 'demo.gif');
 
+// Whole pipeline: start hub, seed agents, launch Chromium, record scripted frames to ffmpeg, then transcode WebM and GIF.
 async function main() {
   console.log('=== Starting ashr 90-Second Backup Video Recorder ===');
 
@@ -42,6 +48,7 @@ async function main() {
   });
   console.log(`Hub running on port ${hub.port}`);
 
+  // POST JSON to a hub hook endpoint (used to stage agents and asks); failures warn but do not abort.
   const postHook = async (pathUrl, body) => {
     const res = await fetch(`http://127.0.0.1:${PORT}${pathUrl}`, {
       method: 'POST',
@@ -67,6 +74,7 @@ async function main() {
   });
 
   // 2. Launch headless Chromium
+  // Chrome DevTools Protocol port; arbitrary but fixed.
   const CDP_PORT = 9245;
   console.log(`Launching Chromium with CDP on port ${CDP_PORT}...`);
   const chrome = spawn('chromium', [
@@ -79,6 +87,7 @@ async function main() {
     `http://127.0.0.1:${PORT}/?t=${TOKEN}`
   ]);
 
+  // Stop Chromium and the hub; also called from signal handlers so Ctrl-C leaves nothing running.
   const cleanup = async () => {
     try { chrome.kill(); } catch {}
     try { await hub.close(); } catch {}
@@ -88,6 +97,7 @@ async function main() {
   process.on('SIGTERM', async () => { await cleanup(); process.exit(143); });
 
   // Wait for Chromium CDP tab
+  // Chromium needs a moment to open its debugging port; poll up to ~6 s for the page target.
   let tab = null;
   for (let i = 0; i < 30; i++) {
     await new Promise(r => setTimeout(r, 200));
@@ -112,6 +122,7 @@ async function main() {
   console.log('Connected to Chromium CDP');
 
   let cdpMsgId = 1;
+  // Send one CDP command and resolve with its result by matching the request id on the shared WebSocket.
   const sendCDP = (method, params = {}) => new Promise((resolve) => {
     const id = cdpMsgId++;
     const handler = (evt) => {
@@ -125,6 +136,7 @@ async function main() {
     ws.send(JSON.stringify({ id, method, params }));
   });
 
+  // Emulate a 430x932 phone at 2x pixel density, which is why output is 860x1864.
   await sendCDP('Emulation.setDeviceMetricsOverride', {
     width: 430,
     height: 932,
@@ -135,6 +147,7 @@ async function main() {
   await sendCDP('Page.enable');
 
   // Wait for initial render & inject visual indicators and captions
+  // Let the app finish its first render before injecting overlays.
   await new Promise(r => setTimeout(r, 1200));
   await sendCDP('Runtime.evaluate', {
     expression: `(() => {
@@ -276,11 +289,13 @@ async function main() {
   let ffmpegErr = '';
   ffmpeg.stderr.on('data', (d) => { ffmpegErr += d.toString(); });
 
+  // Linear interpolation with t clamped to 0..1; moves the fake touch cursor smoothly.
   const lerp = (a, b, t) => a + (b - a) * Math.max(0, Math.min(1, t));
 
   console.log(`Recording ${TOTAL_FRAMES} frames (~${TOTAL_FRAMES / FPS}s duration)...`);
   const tStart = Date.now();
 
+  // The timeline is keyed on frame number rather than wall-clock time (frame / 20 = seconds), so the video is identical on slow or fast machines.
   for (let frame = 0; frame < TOTAL_FRAMES; frame++) {
     // =========================================================
     // SCENE 1: Introduction & Fleet Overview (0s - 12s)
@@ -651,6 +666,7 @@ async function main() {
     }
 
     // Capture frame and write to ffmpeg stdin with drain backpressure handling
+    // Capture, then write to ffmpeg's stdin, waiting for 'drain' when its pipe buffer is full so memory stays bounded.
     const shot = await sendCDP('Page.captureScreenshot', { format: 'jpeg', quality: 85 });
     const buf = Buffer.from(shot.data, 'base64');
     const writeOk = ffmpeg.stdin.write(buf);
@@ -672,6 +688,7 @@ async function main() {
   ws.close();
   await cleanup();
 
+  // Derive the WebM (VP9) from the finished MP4.
   console.log('Generating WebM format...');
   execFileSync('ffmpeg', [
     '-y',
@@ -684,6 +701,7 @@ async function main() {
     WEBM_PATH
   ]);
 
+  // Two-pass palette (palettegen + paletteuse) gives a much better GIF than the default palette.
   console.log('Generating animated GIF preview...');
   execFileSync('ffmpeg', [
     '-y',

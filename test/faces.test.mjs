@@ -1,3 +1,6 @@
+// File: test/faces.test.mjs
+// Purpose: Tests for the decision faces and owner characters: distinct output per decision, stable
+// mapping from owner name to head shape.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { faceSvg, faceWord } from '../app/faces.js';
