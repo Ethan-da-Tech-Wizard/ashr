@@ -3,12 +3,22 @@
 //   default: one real-time run. --once: fast run (10x), for tests. --loop: repeat the timeline forever.
 // With ASHR_TOKEN set, each session goes working -> done 6 s after the phone decides its ask.
 // Without it the script cannot see decisions, so it finishes each ask on a fixed timer.
+//
+// How it fits: a stand-in for real agents when rehearsing or recording the demo (scripts/demo.sh runs it
+// in --loop mode). It talks to the hub only through the localhost endpoints /hook/fake (invent
+// sessions and asks) and /hook/permission (one real low-risk request), plus GET /api/state when a token
+// is available. Nothing here touches the guard's decisions: the phone user decides the fake asks.
+// Exit code 1 if the hub is unreachable after retries.
 const PORT = process.env.PORT || 7777;
 const TOKEN = process.env.ASHR_TOKEN || '';
 const ONCE = process.argv.includes('--once');
 const LOOP = process.argv.includes('--loop') && !ONCE;
 // Time compression factor applied to every sleep: 1 = real time, 10 = ten times faster.
 const scale = (Number(process.env.FAKE_SPEED) || 1) * (ONCE ? 10 : 1);
+/**
+ * @param {number} ms - nominal delay; divided by the time-compression factor `scale`.
+ * @returns {Promise<void>}
+ */
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms / scale));
 const BASE = `http://127.0.0.1:${PORT}`;
 // How long an agent "works" after the phone answers before it is shown as done.
@@ -33,6 +43,12 @@ const AGENTS = [
 ];
 
 // Retries 3 times with backoff so one failed fetch does not end the demo.
+/**
+ * @param {string} label - text for the retry log line.
+ * @param {() => Promise<T>} fn - operation to attempt (up to 3 times, waiting 0.5 s then 1 s).
+ * @returns {Promise<T>} the first successful result.
+ * @throws the last error after the third failure.
+ */
 async function retry(label, fn) {
   for (let i = 1; ; i++) {
     try { return await fn(); } catch (e) {
@@ -43,11 +59,13 @@ async function retry(label, fn) {
   }
 }
 
+// POST JSON to the hub; any non-2xx status is an error (and so retried).
 const post = (path, body) => retry(`POST ${path}`, async () => {
   const res = await fetch(`${BASE}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   if (!res.ok) throw new Error(`hub said ${res.status} for ${path}`);
 });
 
+// GET the hub state. Needs ASHR_TOKEN because /api/* is authenticated.
 const snapshot = () => retry('GET /api/state', async () => {
   const res = await fetch(`${BASE}/api/state`, { headers: { Authorization: `Bearer ${TOKEN}` } });
   if (!res.ok) throw new Error(`hub said ${res.status} for /api/state (check ASHR_TOKEN)`);
@@ -59,6 +77,10 @@ const stamp = (t0) => `[t=${String(Math.round(((Date.now() - t0) * scale) / 1000
 
 // Resolves once the session's ask has appeared and then closed (the phone decided).
 // Poll the hub every 400 ms (scaled). `seen` guards against returning before the ask has appeared.
+/**
+ * @param {string} id - fake session id.
+ * @returns {Promise<void>} resolves when that session's ask has appeared and then disappeared.
+ */
 async function waitForDecision(id) {
   let seen = false;
   for (;;) {
@@ -70,6 +92,11 @@ async function waitForDecision(id) {
 }
 
 // Play one agent's life: working, then a request, wait for the phone, working again, done.
+/**
+ * @param {object} a - entry of AGENTS (id, agent, title, cwd, owner?, at, ask).
+ * @param {number} t0 - timeline start (Date.now()) for log timestamps.
+ * @returns {Promise<void>}
+ */
 async function run(a, t0) {
   const base = { id: a.id, agent: a.agent, title: a.title, cwd: a.cwd, ...(a.owner ? { owner: a.owner } : {}) };
   console.log(`${stamp(t0)} ${a.id}: working`);
@@ -87,6 +114,11 @@ async function run(a, t0) {
 }
 
 // A real low-risk permission request: the guard allows it at once and logs it as "auto".
+/**
+ * @param {number} t0 - timeline start.
+ * @returns {Promise<void>} after 4 scaled seconds, sends `npm test`, which guard/rules.mjs rates LOW so
+ *   the hub allows it itself and the phone log shows an 'auto ok' row.
+ */
 async function autoEntry(t0) {
   await sleep(4000);
   console.log(`${stamp(t0)} claude-demo01: npm test (auto-allowed)`);
@@ -94,6 +126,7 @@ async function autoEntry(t0) {
     tool_input: { command: 'npm test' }, cwd: '/repo/wt-login' });
 }
 
+// Main: run all four agents and the auto entry concurrently; --loop restarts the timeline.
 try {
   do {
     const t0 = Date.now();

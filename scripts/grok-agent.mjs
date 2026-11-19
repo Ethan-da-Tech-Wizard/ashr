@@ -1,6 +1,14 @@
 #!/usr/bin/env node
 // Grok (xAI) agent runner guarded by ashr.
 // Zero npm dependencies. Uses Node 24 native fetch.
+//
+// How it fits: scripts/start-agents.sh launches this in a tmux window for `grok:<name>` agents. It is a
+//   tiny agent of our own (xAI's API has no CLI hook system like Claude's), so the guard is built in.
+//   Run directly: XAI_API_KEY=... node scripts/grok-agent.mjs "your task".
+// Privacy and cost: the prompt and tool results are sent to api.x.ai using YOUR xAI key, so each run
+//   may incur charges and shares the prompt with xAI.
+// Limits: one model round only; the `Bash` tool runs `bash -c <model text>` after approval, with a 30 s
+//   timeout and no sandbox; there is no test for this file (it needs a live API key).
 // Every tool execution is evaluated by ashr hub before running.
 import { execFile } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -68,6 +76,11 @@ const TOOLS = [
 ];
 
 // Ask the hub for permission. Fails closed: any error or missing answer is a deny.
+/**
+ * @param {string} tool_name - 'Bash' | 'Read' | 'Write' (names the guard understands).
+ * @param {object} tool_input - the tool arguments proposed by the model.
+ * @returns {Promise<{behavior: string, message?: string}>} the decision; never throws.
+ */
 async function askAshr(tool_name, tool_input) {
   try {
     const res = await fetch(`http://127.0.0.1:${port}/hook/permission`, {
@@ -94,6 +107,12 @@ async function askAshr(tool_name, tool_input) {
 }
 
 // Execute an approved tool. Output is truncated (reads at 10,000 chars, 30 s command timeout) to bound what is printed.
+/**
+ * @param {string} name - tool to run.
+ * @param {object} input - arguments (command, file_path, content).
+ * @returns {Promise<string>} text result to print; errors are returned as text, not thrown. Paths are
+ *   resolved against the working directory.
+ */
 function runTool(name, input) {
   return new Promise((resolve) => {
     if (name === 'Bash') {
@@ -123,6 +142,7 @@ function runTool(name, input) {
 
 console.log(`\x1b[36m[ashr grok-agent]\x1b[0m Session: ${sessionId} | Task: ${prompt}`);
 
+// Conversation sent to the model: a short system role and the user's task.
 const messages = [
   { role: 'system', content: 'You are Grok, an autonomous coding agent guarded by ashr. Use tools to complete user requests.' },
   { role: 'user', content: prompt },
@@ -153,6 +173,8 @@ try {
   const choice = data.choices?.[0];
   const toolCalls = choice?.message?.tool_calls;
 
+  // The model may answer with text or propose tool calls. Each proposal is run only after the hub (and so
+  // the human on the phone, for risky ones) allows it; blocked calls are just reported.
   if (toolCalls && toolCalls.length > 0) {
     for (const tc of toolCalls) {
       const toolName = tc.function.name;

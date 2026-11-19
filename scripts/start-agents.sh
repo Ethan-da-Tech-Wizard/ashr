@@ -2,6 +2,15 @@
 # Usage: scripts/start-agents.sh auth tests docs
 # Creates tmux session "ashr" with one window per name, each a git worktree
 # ../ashr-wt-<name> running claude with the ashr hooks. Override repo with REPO=/path.
+#
+# How it fits: the one-step way to run several agents side by side so the hub/phone can supervise them.
+# Each agent gets its own git worktree (separate files, no clashes) and its own tmux window; the hub
+# types replies into those windows through tmux (hub/tmux.mjs, target `ashr:<name>`).
+# Argument forms: `name` (Claude), `claude:name`, `gemini:name`, `grok:name`.
+# IMPORTANT: Claude windows get the ashr hooks via --settings and Grok windows run the guarded runner,
+# but `gemini` is started plain: Gemini is only supervised if you have registered hooks/gemini-hook.mjs
+# in Gemini CLI yourself.
+# Strict mode: stop on errors, unset variables and failed pipes.
 set -euo pipefail
 
 if [ "$#" -lt 1 ]; then echo "usage: $0 <name> [name...]" >&2; exit 1; fi
@@ -14,6 +23,7 @@ SETTINGS="$ROOT/hooks/claude-settings.json"
 # tmux session name; the hub's tmux target syntax (ashr:<window>) relies on it.
 SESSION=ashr
 
+# Optional extra secret scanner (see guard/secrets.mjs): auto-detect a sibling git-secret-shield checkout.
 if [ -z "${ASHR_SECRET_SHIELD:-}" ]; then
   for p in "$ROOT/../git-secret-shield"; do
     if [ -d "$p" ]; then

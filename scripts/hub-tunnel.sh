@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 # Start the real ashr hub exposed over a Cloudflare quick tunnel.
 # Accessible from any phone on cellular, hotspot, or remote networks worldwide.
+#
+# How it fits: the one-command version of scripts/tunnel.sh: starts cloudflared, waits for it to print its
+# public URL, exports that as ASHR_PUBLIC_URL, then runs the hub in the foreground so its pairing QR points
+# at the tunnel. Ctrl-C stops both (see the cleanup trap). Needs cloudflared; qrencode is optional.
+# Run: bash scripts/hub-tunnel.sh   (env PORT, default 7777). Logs go to a temp dir that is deleted on exit.
+# -e stop on any error, -u error on unset variables, pipefail make a failure inside a pipe fail the line:
+# strict mode so the script never half-starts.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -9,6 +16,7 @@ PORT="${PORT:-7777}"
 
 command -v cloudflared >/dev/null || { echo "cloudflared not found (brew install cloudflared)" >&2; exit 1; }
 
+# Private scratch folder for cloudflared's log; removed by cleanup(). PIDS tracks background processes to stop.
 TMP="$(mktemp -d)"
 PIDS=()
 
@@ -20,11 +28,15 @@ cleanup() {
   for pid in ${PIDS[@]+"${PIDS[@]}"}; do kill -9 "$pid" 2>/dev/null || true; done
   rm -rf "$TMP"
 }
+# Run cleanup on any exit. INT/TERM exit with the conventional 128+signal codes (130, 143), which then
+# also fires the EXIT trap, so the tunnel is never left running.
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
 echo "Starting Cloudflare quick tunnel for port $PORT ..."
+# --no-autoupdate: do not let cloudflared replace itself while the demo is running. Output is captured
+# to a file because the URL is only announced in the log.
 cloudflared tunnel --no-autoupdate --url "http://localhost:$PORT" >"$TMP/tunnel.log" 2>&1 &
 TUNNEL_PID=$!
 PIDS+=("$TUNNEL_PID")

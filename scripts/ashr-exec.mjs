@@ -5,6 +5,16 @@
 // How it works: the command is NOT run until the hub approves it. The hub scores
 // the command and, if risky, waits for a decision from the phone. Exit status is
 // that of the command, or 1 if it was denied or the hub could not be reached.
+//
+// How it fits: this is the guard for agents that have no native hook system (Codex and others): they
+//   are told to run commands through `ashr-exec` instead of directly. It sends the command to the hub's
+//   /hook/permission (guard/rules.mjs scores it; risky ones wait for the phone) and only then spawns it.
+// Fail-closed: unlike hooks/gemini-hook.mjs, an unreachable hub, an invalid reply or any HTTP error
+//   means the command is NOT run (exit 1). Env: ASHR_AGENT, ASHR_TITLE, PORT, ASHR_AGENT_TOKEN,
+//   ASHR_SESSION_ID, ASHR_AUTO_TOKEN=1 (ask the hub for a scoped token), TMUX_PANE.
+// Limit: the guard sees the command text only; the program, once allowed, runs with the user's full
+//   rights. Arguments are passed straight to the program (no shell), so shell syntax such as pipes
+//   will not work unless the command is `bash -c "..."`, which the guard also scores.
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
@@ -49,6 +59,10 @@ if (!title) title = path.basename(cwd);
 
 // Pick the credential to send: an explicit token, or (when ASHR_AUTO_TOKEN=1) a fresh
 // scoped token requested from the hub's localhost-only endpoint. Returns '' if none.
+/**
+ * @returns {Promise<string>} bearer token to send, or '' when none is configured or the hub refused to
+ *   issue one (the request then goes tokenless, which the hub allows for localhost hooks).
+ */
 async function obtainToken() {
   if (token) return token;
   if (process.env.ASHR_AUTO_TOKEN === '1') {
@@ -85,6 +99,10 @@ async function obtainToken() {
 
 // POST the command to /hook/permission and resolve with the hub's decision
 // ({ behavior: 'allow' | 'deny', message? }). Rejects on HTTP errors or an unreachable hub.
+/**
+ * @returns {Promise<{behavior?: string, message?: string}>} the hub's decision object.
+ * @throws {Error} on HTTP status >= 400, an unparseable reply or a connection failure.
+ */
 async function askPermission() {
   const activeToken = await obtainToken();
   return new Promise((resolve, reject) => {
@@ -131,6 +149,7 @@ async function askPermission() {
       }
     );
 
+    // Connection errors reject: this is the fail-closed path.
     req.on('error', (err) => {
       // If hub is not running, fail closed with clear error.
       reject(new Error(`Could not reach ashr hub on port ${port}: ${err.message}`));
@@ -160,6 +179,7 @@ try {
     process.exit(1);
   });
 
+  // Mirror the child's exit status so scripts can rely on it (a signal-killed child reports null, so 0).
   child.on('close', (code) => {
     process.exit(code ?? 0);
   });

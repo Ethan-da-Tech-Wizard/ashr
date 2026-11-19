@@ -3,24 +3,41 @@
 //   npm run task -- zazu/pitch     new branch from the latest main, in its own folder
 //   npm run sync                   pull in the latest main, run the tests, warn about overlap
 //   npm run ship                   sync, then push and print the pull request link
+//
+// How it fits: package.json maps the three npm scripts here, and .githooks/pre-push runs `node
+// scripts/task.mjs prepush` to block direct pushes to main. It only wraps git (via execFileSync with an
+// argument array, never a shell) and the test runner; it needs no network except `git fetch` and `push`.
+// Convention: branches are <zazu|ethan>/<kebab-topic> (see BRANCH) and each task gets its own git
+// worktree so two people or agents never edit the same checkout.
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, join, basename } from 'node:path';
 
 // Run git with an argument array (no shell) and return trimmed output; throws on non-zero exit.
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
+// Split command output into non-empty lines.
 const lines = (text) => text.split('\n').filter(Boolean);
+// say = friendly progress message; stop = print an error and exit 1 (never returns).
 const say = (msg) => console.log(`ashr: ${msg}`);
 const stop = (msg) => { console.error(`ashr: ${msg}`); process.exit(1); };
 // Branch names must be <person>/<kebab-case-topic>, so it is always clear whose work a branch is.
 const BRANCH = /^(zazu|ethan)\/[a-z0-9][a-z0-9-]*$/;
 
 // Point git at the repo's .githooks folder (it contains the pre-push guard) the first time any command runs.
+/**
+ * Ensures core.hooksPath points at .githooks so the pre-push guard is active in this clone.
+ * @returns {void}
+ */
 function installHooks() {
   if (git('config', '--default', '', '--get', 'core.hooksPath') !== '.githooks') git('config', 'core.hooksPath', '.githooks');
 }
 
 // Create a branch from the latest origin/main, either in a separate worktree folder (default) or in place with --here.
+/**
+ * @param {string} name - branch name like 'zazu/pitch'.
+ * @param {boolean} here - true: switch this checkout (only if clean); false: make a sibling worktree.
+ * @returns {void} exits with an explanatory message on any problem (bad name, existing branch).
+ */
 function task(name, here) {
   if (!BRANCH.test(name || '')) stop('name the branch zazu/<thing> or ethan/<thing>, for example: npm run task -- zazu/pitch');
   git('fetch', '--quiet', 'origin');
@@ -40,6 +57,11 @@ function task(name, here) {
 }
 
 // Files this branch changes that another unmerged branch also changes.
+/**
+ * @param {string} branch - current branch name.
+ * @returns {Array<{branch: string, files: string[]}>} other unmerged remote branches that touch the
+ *   same files as this one, so the two authors can coordinate before merging.
+ */
 function overlaps(branch) {
   const mine = new Set(lines(git('diff', '--name-only', 'origin/main...HEAD')));
   if (!mine.size) return [];
@@ -51,6 +73,9 @@ function overlaps(branch) {
 }
 
 // Merge the latest main into the current branch, run the tests, and warn about overlapping files. Returns the branch name, or null on main.
+/**
+ * @returns {string|null} the branch name that is now up to date, or null when on main.
+ */
 function sync() {
   const branch = git('branch', '--show-current');
   if (git('status', '--porcelain')) stop('commit your changes first, then sync.');
@@ -77,6 +102,11 @@ function sync() {
   return branch;
 }
 
+/**
+ * Syncs, pushes the branch and prints the GitHub compare URL that opens a pull request (the script
+ * never opens it itself, so a human reviews the title first).
+ * @returns {void}
+ */
 function ship() {
   const branch = sync();
   if (!branch) return;
@@ -87,12 +117,17 @@ function ship() {
 }
 
 // Called by .githooks/pre-push. Git sends "<local ref> <local sha> <remote ref> <remote sha>" lines.
+/**
+ * @param {string[]} pushed - ref lines git feeds to the pre-push hook.
+ * @returns {void} exits 1 if any line targets refs/heads/main.
+ */
 function prepush(pushed) {
   if (pushed.some((l) => l.split(' ')[2] === 'refs/heads/main')) {
     stop('pushing straight to main is blocked. Push your branch and open a pull request.');
   }
 }
 
+// Entry: `prepush` reads git's stdin; the other commands dispatch by name.
 const [cmd, ...rest] = process.argv.slice(2);
 if (cmd === 'prepush') {
   let input = '';
