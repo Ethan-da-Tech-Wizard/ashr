@@ -1,3 +1,21 @@
+// ==============================================================================
+// File: hub/routes.mjs
+// Purpose: the endpoint handlers behind every hub URL (hooks from agents, calls from the phone).
+//
+// How it fits: server.mjs owns HTTP plumbing (who may call, body parsing, JSON replies) and
+//   dispatches here through its POST table. Handlers call guard/rules.mjs `score()` to rate
+//   a tool call, mutate ctx.state (state.mjs), type into tmux (tmux.mjs), push notifications
+//   (notify.mjs), write the audit vault (aws-vault.mjs) and ask an AI to explain a request
+//   (ai-explain.mjs). The request and reply shapes are specified in docs/CONTRACT.md.
+//
+// Endpoint groups: /hook/* is for local agents (permission, event, fake demo data, pair-code,
+//   agent-token issue/revoke); /api/* is for the paired phone (pair, decide, say, kill, explain).
+//
+// Fail-closed policy: if the hub cannot decide (queue full, timeout, bad input) the reply is a
+//   deny, never an allow. Unknown input is rejected with 4xx rather than guessed at.
+// Test: test/hub.test.mjs, test/agent-tokens.test.mjs, test/fuzz.test.mjs, test/hub-auth.test.mjs.
+// ==============================================================================
+
 // Endpoint handlers. Each handler gets (ctx, req, body) and returns { status, json } or handles res itself.
 // Handler contract: each exported handler is async (ctx, req, body[, res]) and returns { status, json }.
 // ctx carries { state, tmux, auth, port, announce, baseUrl }. Validation is strict: every
@@ -10,13 +28,23 @@ import { recordDecisionToVault } from './aws-vault.mjs';
 import { requestAiExplanation } from './ai-explain.mjs';
 
 // Response bodies in the shape the Claude Code PermissionRequest hook expects.
+// Constant allow reply (shared, never mutated) and a builder for deny replies; both
+// match the `hookSpecificOutput.decision` shape documented in docs/CONTRACT.md.
 const ALLOW = { hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'allow' } } };
 const denyBody = (message) => ({
   hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'deny', message } },
 });
 
 // Return v only if it is a string of at most `max` chars, else null.
+/**
+ * Strict string validator used on every client-supplied field.
+ * @param {unknown} v - value from a request body.
+ * @param {number} max - maximum allowed length in UTF-16 units.
+ * @returns {string|null} v if it is a string no longer than max, otherwise null (so callers
+ *   can use `str(x, n) || default` or test for null to reject).
+ */
 const str = (v, max) => (typeof v === 'string' && v.length <= max ? v : null);
+// Whitelists for client-controlled enums; anything outside them is ignored or rejected.
 const AGENTS = new Set(['claude', 'codex', 'gemini', 'grok']);
 const STATES = new Set(['needs_you', 'working', 'done', 'failed', 'signed_out', 'idle']);
 // Cap on concurrently pending asks, so a runaway agent cannot flood the phone.
@@ -26,6 +54,14 @@ const RISKS = new Set(['low', 'medium', 'high']);
 // Derive a stable session id and a state patch from a hook payload. The agent
 // name comes from body, then the x-ashr-agent header, then the token, then 'claude'.
 // The id is `<agent>-<first 6 alnum chars of session_id>` so it is short and safe to display.
+/**
+ * @param {object} ctx - hub context (reads ctx.state.sessions to keep existing titles).
+ * @param {object} body - parsed hook JSON (agent, session_id, cwd, title...).
+ * @param {http.IncomingMessage} req - headers x-ashr-agent and x-ashr-pane.
+ * @param {object} [tokenSession] - metadata of the verified agent token, if any.
+ * @returns {{id: string, patch: object}} session id and the fields to merge into it. The
+ *   pane header is applied only when validTarget() accepts it, because it is later passed to tmux.
+ */
 function claudeSession(ctx, body, req, tokenSession) {
   const reqAgent = str(req.headers['x-ashr-agent'], 20);
   const tokenAgent = tokenSession?.agentId && AGENTS.has(tokenSession.agentId)
@@ -34,6 +70,8 @@ function claudeSession(ctx, body, req, tokenSession) {
   const agent = AGENTS.has(body.agent) ? body.agent : (reqAgent && AGENTS.has(reqAgent) ? reqAgent : (tokenAgent || 'claude'));
   const sid = str(body.session_id, 200) || 'unknown';
   const id = `${agent}-${sid.replace(/[^\w]/g, '').slice(0, 6) || 'x'}`;
+  // The tmux pane arrives from a header set by the agent's hook config ($TMUX_PANE). It is
+  // untrusted text, so only well-formed pane/window ids are stored.
   const pane = req.headers['x-ashr-pane'];
   const patch = { agent };
   if (typeof body.cwd === 'string') patch.cwd = body.cwd.slice(0, 500);
@@ -47,8 +85,19 @@ function claudeSession(ctx, body, req, tokenSession) {
 // Authorization header is present (localhost hooks are allowed tokenless),
 // { session } when valid, or { error } with 401/403 when a token is bad,
 // lacks the capability, or belongs to a different agent.
+/**
+ * @param {object} ctx - hub context (uses ctx.auth.getSession).
+ * @param {http.IncomingMessage} req
+ * @param {string} requiredCapability - e.g. 'hook:permission'; a token needs it or '*'.
+ * @param {string|null} sessionAgent - agent name claimed by the request, compared to a
+ *   token that was minted for one specific agent.
+ * @returns {null | {session: object} | {error: {status: number, json: object}}}
+ */
 function verifyAgentToken(ctx, req, requiredCapability, sessionAgent) {
   const authHeader = req.headers?.authorization;
+  // Tokenless localhost hooks are allowed by design (server.mjs already restricted /hook/* to
+  // loopback), which keeps plain Claude Code HTTP hooks working with zero setup. A header that
+  // IS present must be valid, so a stale token fails loudly instead of silently downgrading.
   if (!authHeader) return null;
   const m = /^Bearer\s+(.+)$/i.exec(authHeader);
   if (!m) {
@@ -78,6 +127,14 @@ function verifyAgentToken(ctx, req, requiredCapability, sessionAgent) {
 }
 
 // POST /hook/agent-token (localhost only): mint a scoped, expiring token for an agent.
+/**
+ * @param {object} ctx
+ * @param {http.IncomingMessage} req - unused.
+ * @param {{agentId?: string, role?: string, ttlMs?: number, capabilities?: string[]}} body
+ *   all optional; defaults give a one-hour worker token with hook:permission and hook:event.
+ * @returns {Promise<{status: number, json: object}>} the plaintext token is returned ONCE; only
+ *   its SHA-256 digest is stored.
+ */
 export async function hookAgentToken(ctx, req, body = {}) {
   const agentId = typeof body?.agentId === 'string' && body.agentId.trim() ? body.agentId.trim() : 'agent';
   const role = typeof body?.role === 'string' && body.role.trim() ? body.role.trim() : 'worker';
@@ -107,6 +164,13 @@ export async function hookAgentToken(ctx, req, body = {}) {
 }
 
 // POST /hook/agent-token/revoke: invalidate a token.
+/**
+ * @param {object} ctx
+ * @param {http.IncomingMessage} req - unused.
+ * @param {{token?: string}} body
+ * @returns {Promise<{status: number, json: {ok: true, revoked: boolean}}>} revoked is false
+ *   for an unknown token; both outcomes are 200 so a caller cannot probe which tokens exist.
+ */
 export async function hookAgentTokenRevoke(ctx, req, body = {}) {
   const token = typeof body?.token === 'string' ? body.token : '';
   const revoked = ctx.auth.revoke(token);
@@ -122,6 +186,15 @@ export async function hookAgentTokenRevoke(ctx, req, body = {}) {
 // POST /hook/permission: the heart of ashr. Scores the requested tool call;
 // low risk is auto-allowed, otherwise the request is held open until the
 // phone answers (or times out and is denied). Every outcome is audited.
+/**
+ * @param {object} ctx
+ * @param {http.IncomingMessage} req
+ * @param {object} body - Claude-style hook JSON: tool_name, tool_input, cwd, session_id...
+ * @param {http.ServerResponse} res - watched for 'close' so a hung-up agent withdraws its ask.
+ * @returns {Promise<{status: number, json: object}>} resolves when the phone answers, when the
+ *   hold times out (deny), or immediately for low-risk calls (allow) and a full queue (deny).
+ *   A non-2xx reply (bad token) is returned as-is.
+ */
 export async function hookPermission(ctx, req, body, res) {
   const bodyAgent = body && typeof body.agent === 'string' ? body.agent : (req.headers && req.headers['x-ashr-agent'] ? req.headers['x-ashr-agent'] : null);
   const authRes = verifyAgentToken(ctx, req, 'hook:permission', bodyAgent);
@@ -129,8 +202,12 @@ export async function hookPermission(ctx, req, body, res) {
 
   const { id, patch } = claudeSession(ctx, body, req, authRes?.session);
   ctx.state.upsertSession(id, patch);
+  // Rate the call: { risk: low|medium|high, summary, detail, reasons }. Low risk never
+  // bothers the human; everything else must be answered.
   const verdict = await score({ tool: body.tool_name, input: body.tool_input, cwd: body.cwd });
   if (verdict.risk === 'low') {
+    // Auto-allow still leaves a trace: a log line for the phone and an audit-vault record
+    // (best effort, `.catch` so a vault failure cannot block the agent).
     ctx.state.addLog(id, verdict.summary, 'auto');
     ctx.state.emit();
     recordDecisionToVault({ sessionId: id, tool: body.tool_name, summary: verdict.summary, risk: verdict.risk, decision: 'auto' }).catch(() => {});
@@ -142,6 +219,7 @@ export async function hookPermission(ctx, req, body, res) {
     ctx.state.emit();
     return { status: 200, json: denyBody('ashr queue full') };
   }
+  // Park the request: the agent's HTTP call stays open (up to holdMs) until the phone decides.
   const { ask, decision } = ctx.state.holdAsk({
     sessionId: id,
     tool: String(body.tool_name ?? ''),
@@ -154,11 +232,21 @@ export async function hookPermission(ctx, req, body, res) {
   notifyAsk(ask).catch(() => {});
   // If the agent hangs up before we answer, withdraw the ask from the phone.
   res.on('close', () => { if (!res.writableEnded) ctx.state.cancelAsk(ask.id); });
+  // Blocks here. 'cancel' (agent hung up) also lands in the deny branch, harmlessly: the
+  // socket is already closed.
   const d = await decision;
   return { status: 200, json: d.behavior === 'allow' ? ALLOW : denyBody(d.message ?? 'Denied from phone') };
 }
 
 // POST /hook/event: map Claude Code lifecycle events to a session state shown on the phone.
+/**
+ * @param {object} ctx
+ * @param {http.IncomingMessage} req
+ * @param {object} body - hook JSON with hook_event_name (UserPromptSubmit, SessionStart, Stop,
+ *   Notification) and event-specific fields.
+ * @returns {Promise<{status: number, json: object}>} 200 {} on success; unknown events only
+ *   refresh the session's timestamp.
+ */
 export async function hookEvent(ctx, req, body) {
   const bodyAgent = body && typeof body.agent === 'string' ? body.agent : (req.headers && req.headers['x-ashr-agent'] ? req.headers['x-ashr-agent'] : null);
   const authRes = verifyAgentToken(ctx, req, 'hook:event', bodyAgent);
@@ -189,6 +277,13 @@ export async function hookEvent(ctx, req, body) {
 }
 
 // Localhost-only demo hook: { session: {id?, agent, title, state, cwd?, owner?}, ask?: {tool, summary, detail, risk, reasons} }
+/**
+ * Fabricates sessions and asks for demos and scripts/fake-agents.mjs; no real agent involved.
+ * @param {object} ctx
+ * @param {http.IncomingMessage} req - unused.
+ * @param {object} body - see the shape in the comment above.
+ * @returns {Promise<{status: number, json: object}>} 400 when session.agent is not whitelisted.
+ */
 export async function hookFake(ctx, req, body) {
   const sess = body.session && typeof body.session === 'object' ? body.session : null;
   if (!sess || !AGENTS.has(sess.agent)) return { status: 400, json: { error: 'session.agent must be claude|codex|gemini' } };
@@ -217,6 +312,13 @@ export async function hookFake(ctx, req, body) {
 }
 
 // POST /api/pair: exchange a pairing code for a session token (the only unauthenticated /api route).
+/**
+ * @param {object} ctx
+ * @param {http.IncomingMessage} req - unused.
+ * @param {{code?: string}} body
+ * @returns {Promise<{status: number, json: {token?: string, error?: string}}>} 401 for a bad or
+ *   used code, 429 after too many failures (auth.mjs rate limit).
+ */
 export async function apiPair(ctx, req, body) {
   const out = ctx.auth.redeem(body.code);
   if (out.error) return { status: out.status, json: { error: out.error } };
@@ -224,6 +326,10 @@ export async function apiPair(ctx, req, body) {
 }
 
 // Localhost-only: issue a fresh pair code, print it (with QR) on the hub terminal, return the URL.
+/**
+ * @param {object} ctx - uses ctx.auth, ctx.baseUrl, ctx.port and ctx.announce.
+ * @returns {Promise<{status: number, json: {url: string}}>} the pairing URL for the new code.
+ */
 export async function hookPairCode(ctx) {
   const code = ctx.auth.newCode();
   const base = (ctx.baseUrl ? ctx.baseUrl() : `http://127.0.0.1:${ctx.port}`).replace(/\/$/, '');
@@ -233,6 +339,13 @@ export async function hookPairCode(ctx) {
 }
 
 // POST /api/decide: phone allows or denies a pending ask. 410 means it already expired or was answered.
+/**
+ * @param {object} ctx
+ * @param {http.IncomingMessage} req - unused.
+ * @param {{askId?: string, behavior?: 'allow'|'deny', message?: string}} body
+ * @returns {Promise<{status: number, json: object}>} 400 invalid input, 410 unknown ask, else
+ *   200 and the agent's held request is released. The decision is also appended to the audit vault.
+ */
 export async function apiDecide(ctx, req, body) {
   const askId = str(body.askId, 64);
   if (!askId) return { status: 400, json: { error: 'askId required' } };
@@ -248,6 +361,14 @@ export async function apiDecide(ctx, req, body) {
 
 // POST /api/explain: ask Gemini or Grok to explain an ask in plain English. Works
 // even when the ask is gone if the client resends its summary.
+/**
+ * @param {object} ctx
+ * @param {http.IncomingMessage} req - unused.
+ * @param {{askId?: string, provider?: 'gemini'|'grok'}} body - the optional fields summary,
+ *   tool, detail, risk and reasons let the phone explain an ask the hub has already forgotten.
+ * @returns {Promise<{status: number, json: object}>} `simulated: true` marks a canned
+ *   offline explanation (no API key configured), so the UI can label it.
+ */
 export async function apiExplain(ctx, req, body) {
   const askId = str(body?.askId, 64);
   if (!askId) return { status: 400, json: { error: 'askId required' } };
@@ -280,6 +401,11 @@ export async function apiExplain(ctx, req, body) {
 }
 
 // Resolve body.sessionId to a session with a valid tmux pane, or an error result (404 unknown, 409 no pane).
+/**
+ * @param {object} ctx
+ * @param {{sessionId?: string}} body
+ * @returns {{session: object} | {error: {status: number, json: object}}}
+ */
 function target(ctx, body) {
   const id = str(body.sessionId, 64);
   const s = id && ctx.state.sessions.get(id);
@@ -289,6 +415,13 @@ function target(ctx, body) {
 }
 
 // POST /api/say: type a message into the agent's tmux pane. Newlines become spaces so one request is one prompt.
+/**
+ * @param {object} ctx
+ * @param {http.IncomingMessage} req - unused.
+ * @param {{sessionId?: string, text?: string}} body - text is 1-2000 characters.
+ * @returns {Promise<{status: number, json: object}>} 502 when tmux itself fails. The session
+ *   flips to `working` because the agent now has a new instruction.
+ */
 export async function apiSay(ctx, req, body) {
   const text = str(body.text, 2000);
   if (!text || !text.trim()) return { status: 400, json: { error: 'text required (1-2000 chars)' } };
@@ -305,6 +438,13 @@ export async function apiSay(ctx, req, body) {
 }
 
 // POST /api/kill: send Ctrl-C to the agent's pane.
+/**
+ * @param {object} ctx
+ * @param {http.IncomingMessage} req - unused.
+ * @param {{sessionId?: string}} body
+ * @returns {Promise<{status: number, json: object}>} 200 after Ctrl-C was sent; 404/409/502
+ *   as for apiSay.
+ */
 export async function apiKill(ctx, req, body) {
   const t = target(ctx, body);
   if (t.error) return t.error;

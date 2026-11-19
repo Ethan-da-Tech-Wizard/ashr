@@ -3,6 +3,19 @@
 // Programmer: Ethan-da-Tech-Wizard
 // Last Modified: November 18, 2026
 // Purpose: Ephemeral token generation and capability scoping for supervised agents
+//
+// How it fits: server.mjs creates one auth store per hub with createAuth(). The phone pairs
+//   by redeeming a one-time code (routes.apiPair) and receives a session token that
+//   server.mjs checks on every /api/* call via valid(); agents may optionally present scoped
+//   tokens that routes.verifyAgentToken checks through getSession().
+//
+// Security design: tokens and codes are random from crypto.randomBytes; tokens are stored only
+//   as SHA-256 digests; comparison is constant-time; redeeming is rate limited; codes are
+//   single use and short lived. This module has no I/O and no timers (expiry is checked lazily
+//   when a token is looked up).
+// Known limits: everything is in memory (restart = all phones must re-pair); getSession scans
+//   all tokens linearly, fine for a handful of devices.
+// Test: test/hub-auth.test.mjs and test/agent-tokens.test.mjs.
 // ==============================================================================
 // Pairing and session tokens. Pair codes are single use and expire after 10 minutes.
 // Supports ephemeral per-agent session tokens with TTL and capability scoping.
@@ -22,12 +35,22 @@ const digest = (s) => createHash('sha256').update(s).digest();
 
 // Create an auth store. `fixedToken` (from ASHR_TOKEN) is an optional never-expiring admin token.
 // Returns { newCode, redeem, valid, issueAgentToken, getSession, revoke }.
+/**
+ * @param {object} [options]
+ * @param {string} [options.fixedToken=''] - ASHR_TOKEN value, accepted forever with full rights.
+ * @returns {{newCode: () => string, redeem: (code: string) => object, valid: (token: string) => boolean,
+ *   issueAgentToken: (options?: object) => {token: string, expiresAt: number, agentId: string},
+ *   getSession: (token: string) => (object|null), revoke: (token: string) => boolean}}
+ */
 export function createAuth({ fixedToken = '' } = {}) {
   const codes = new Map(); // code -> expiresAt
+  // Keyed by digest so the plaintext never sits in memory. Values hold the token's scope:
+  // agentId (who), role (admin|controller|worker), capabilities (['*'] or hook:* names).
   const tokens = new Map(); // sha256_hex -> { expiresAt, agentId, role, capabilities }
   // Timestamps of recent failed redeems, oldest first.
   const fails = [];
 
+  // The fixed token exists for tests and scripts that cannot pair interactively.
   if (fixedToken) {
     tokens.set(digest(fixedToken).toString('hex'), {
       expiresAt: Infinity,
@@ -38,6 +61,9 @@ export function createAuth({ fixedToken = '' } = {}) {
   }
 
   // Mint a single-use pairing code. Expired codes are purged and, at the cap, the oldest is evicted so memory stays bounded.
+  /**
+   * @returns {string} a 12-character base64url code, valid for 10 minutes, one redeem.
+   */
   const newCode = () => {
     const now = Date.now();
     for (const [c, exp] of codes) if (exp <= now) codes.delete(c);
@@ -49,6 +75,11 @@ export function createAuth({ fixedToken = '' } = {}) {
   };
 
   // Returns { token } or { error, status }. The code is burned on first valid use.
+  /**
+   * @param {unknown} code - value typed or scanned on the phone.
+   * @returns {{token: string} | {status: 401|429, error: string}} the new phone token (48 hex
+   *   characters, 192 bits) with unlimited lifetime and all capabilities.
+   */
   const redeem = (code) => {
     const now = Date.now();
     // Drop failures that have aged out of the rate-limit window.
@@ -74,6 +105,15 @@ export function createAuth({ fixedToken = '' } = {}) {
   };
 
   // Issue an ephemeral scoped token for a specific agent (e.g. claude-wt-auth, gemini-arch)
+  /**
+   * @param {object} [options]
+   * @param {string} [options.agentId='agent'] - agent the token is bound to (also in its prefix).
+   * @param {string} [options.role='worker']
+   * @param {number} [options.ttlMs] - lifetime; default one hour.
+   * @param {string[]} [options.capabilities] - default hook:permission and hook:event.
+   * @returns {{token: string, expiresAt: number, agentId: string}} the plaintext token, which is
+   *   not recoverable later.
+   */
   const issueAgentToken = ({ agentId = 'agent', role = 'worker', ttlMs = DEFAULT_AGENT_TOKEN_TTL_MS, capabilities = ['hook:permission', 'hook:event'] } = {}) => {
     const now = Date.now();
     const token = `ashr_${agentId}_${randomBytes(18).toString('base64url')}`;
@@ -87,6 +127,11 @@ export function createAuth({ fixedToken = '' } = {}) {
   };
 
   // Look up a presented token and return its metadata, or null. Expired tokens are removed on sight.
+  /**
+   * @param {string} given - presented token.
+   * @returns {object|null} stored scope {expiresAt, agentId, role, capabilities}, or null if
+   *   unknown, empty or expired.
+   */
   const getSession = (given) => {
     if (!given) return null;
     const now = Date.now();
@@ -104,6 +149,7 @@ export function createAuth({ fixedToken = '' } = {}) {
     return null;
   };
 
+  // Boolean form of getSession, used by the /api gate in server.mjs.
   const valid = (given) => {
     return getSession(given) !== null;
   };
