@@ -1,11 +1,18 @@
 // File: test/agent-tokens.test.mjs
 // Purpose: Tests for per-agent session tokens: issuing, scoping by capability and agent,
 // expiry and revocation, in the auth store and through the running hub (node:test, no network).
+//
+// How it fits: covers the second auth layer (scoped agent tokens) of hub/auth.mjs and the
+// verifyAgentToken checks in hub/routes.mjs. Two unit tests use createAuth() directly; the third
+// starts a hub on a free port. Tokens are never real secrets here.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createAuth } from '../hub/auth.mjs';
 import { startHub } from '../hub/server.mjs';
 
+// Scenario: issue two tokens for different agents. They must be distinct, carry the agent name in their
+// prefix, be valid, expose agentId/role through getSession, and revoking one must not affect the other.
+// An unknown token is invalid.
 test('ephemeral per-agent tokens are isolated and scoped', () => {
   const auth = createAuth();
   const t1 = auth.issueAgentToken({ agentId: 'claude-agent', role: 'worker' });
@@ -29,6 +36,8 @@ test('ephemeral per-agent tokens are isolated and scoped', () => {
   assert.equal(auth.valid(t2.token), true);
 });
 
+// Scenario: a token with ttlMs 25 is valid immediately and invalid after 40 ms. Why: expiry is checked
+// lazily when a token is presented, so this proves the check happens on use (no background timer).
 test('ephemeral per-agent tokens expire after TTL', async () => {
   const auth = createAuth();
   const { token } = auth.issueAgentToken({ agentId: 'quick-agent', ttlMs: 25 });
@@ -38,6 +47,10 @@ test('ephemeral per-agent tokens expire after TTL', async () => {
   assert.equal(auth.valid(token), false);
 });
 
+// Scenario, end to end in six steps: (1) issue a token over HTTP; (2) a permission call with it succeeds
+// (Read is low risk -> allow); (3) a garbage token gets 401; (4) a token that lacks hook:permission gets 403
+// on /hook/permission; (5) revoke via the revoke endpoint; (6) the revoked token now gets 401. The hub is
+// closed in `finally` so a failing assertion cannot leave a server running.
 test('hub endpoints: /hook/agent-token issues, validates, and revokes tokens', async () => {
   const hub = await startHub({ port: 0, host: '127.0.0.1', holdMs: 300 });
   const base = `http://127.0.0.1:${hub.port}`;
