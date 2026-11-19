@@ -12,6 +12,7 @@ command -v cloudflared >/dev/null || { echo "cloudflared not found (brew install
 TMP="$(mktemp -d)"
 PIDS=()
 
+# Same stop-then-kill cleanup pattern as demo.sh.
 cleanup() {
   trap - EXIT INT TERM
   for pid in ${PIDS[@]+"${PIDS[@]}"}; do kill "$pid" 2>/dev/null || true; done
@@ -28,6 +29,7 @@ cloudflared tunnel --no-autoupdate --url "http://localhost:$PORT" >"$TMP/tunnel.
 TUNNEL_PID=$!
 PIDS+=("$TUNNEL_PID")
 
+# Poll the tunnel log up to 30 s for the public URL; give up early if cloudflared dies.
 URL=""
 for _ in $(seq 1 60); do
   URL="$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' "$TMP/tunnel.log" | head -1 || true)"
@@ -42,9 +44,11 @@ if [ -z "$URL" ]; then
   exit 1
 fi
 
+# The hub uses this to build pairing links that work from outside the local network.
 export ASHR_PUBLIC_URL="$URL"
 echo "Tunnel active at: $URL"
 echo "Starting ashr hub..."
 echo
 
+# exec replaces the subshell, so signals reach the hub directly.
 (cd "$ROOT" && exec node hub/server.mjs)
