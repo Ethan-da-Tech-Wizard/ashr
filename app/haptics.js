@@ -1,8 +1,18 @@
 // Web Audio + Vibration haptic feedback for iOS Safari and Android. Zero dependencies.
 // Lazily created audio context; browsers only allow audio after a user gesture.
+//
+// How it fits: swipe.js calls hapticAllow/hapticDeny when a swipe is released, app.js calls
+// hapticAlert when a NEW ask arrives and initHaptics on the first keyboard shortcut. All sounds are
+// synthesised with oscillators (no audio files), kept very short and quiet (gain 0.08-0.12) so they
+// feel like clicks rather than alarms. Everything is wrapped in try/catch: feedback is optional and
+// must never break a decision.
 let ctx = null;
 
 // Return the shared AudioContext, or null where unsupported (including non-browser test runs).
+/**
+ * @returns {AudioContext|null} shared context, created on first use; null when unsupported (Node
+ *   tests, old browsers).
+ */
 function getAudio() {
   if (ctx) return ctx;
   const AudioCtx = typeof window !== "undefined" ? (window.AudioContext || window.webkitAudioContext) : null;
@@ -16,6 +26,11 @@ function getAudio() {
 }
 
 // Unlock audio context on user gesture
+/**
+ * Resumes a suspended AudioContext. Browsers (especially iOS Safari) start it suspended until a user
+ * gesture, so this is called from gesture handlers (pointerdown, key press).
+ * @returns {void}
+ */
 export function initHaptics() {
   const c = getAudio();
   if (c && c.state === "suspended") {
@@ -24,6 +39,10 @@ export function initHaptics() {
 }
 
 // Vibrate if supported (Android; iOS Safari ignores it). Errors are ignored: haptics are optional.
+/**
+ * @param {number|number[]} [pattern=15] - ms, or alternating vibrate/pause ms.
+ * @returns {void}
+ */
 export function vibrate(pattern = 15) {
   if (typeof navigator !== "undefined" && navigator.vibrate) {
     try { navigator.vibrate(pattern); } catch {}
@@ -31,6 +50,7 @@ export function vibrate(pattern = 15) {
 }
 
 // Crisp subtle pop on allow (rising chirp: 520Hz -> 820Hz, 30ms)
+/** Short rising chirp plus a 15 ms buzz. @returns {void} */
 export function hapticAllow() {
   vibrate(15);
   const c = getAudio();
@@ -53,6 +73,7 @@ export function hapticAllow() {
 }
 
 // Low subtle thud on deny (falling thud: 240Hz -> 110Hz, 45ms)
+/** Short falling thud plus a three-part buzz. @returns {void} */
 export function hapticDeny() {
   vibrate([20, 40, 20]);
   const c = getAudio();
@@ -74,6 +95,7 @@ export function hapticDeny() {
 }
 
 // Alert chime when a new high/medium ask arrives (two-tone chime: 587Hz -> 880Hz)
+/** Two-note chime (D5 then A5) and a longer buzz for a new request. @returns {void} */
 export function hapticAlert() {
   vibrate([40, 80, 40]);
   const c = getAudio();

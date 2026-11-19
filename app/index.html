@@ -1,15 +1,43 @@
+<!-- ==============================================================================
+     File: app/index.html
+     Purpose: the single page of the ashr phone app: header, agent row, card stack, round decision
+     buttons, guard log and the modal sheets.
+
+     How it fits: served by hub/server.mjs at / (static files from app/). All behaviour is in app.js
+     (ES module, no build step); this file holds only static structure plus the ids that scripts
+     look up. Scripts: app.js (controller), api.js (network), card.js, sheets.js, swipe.js, fx.js,
+     agents.js, character.js, faces.js, explain.js, haptics.js, voice.js, mock.js (demo).
+
+     Pairing: the page is opened from the QR link /?pair=<code>; api.js exchanges the code for a token
+     and cleans the address bar. Without a token the app shows a 'not paired' screen; ?demo=1 runs on
+     built-in fake data.
+
+     Accessibility: live regions (aria-live) announce connection status, the stack and toasts; icon
+     buttons carry aria-labels; sheets are native <dialog>s (focus trap, Escape closes).
+     ============================================================================== -->
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+
+  <!-- viewport-fit=cover lets the layout extend under the notch; styles.css then pads with
+       env(safe-area-inset-*) so content stays clear of it. -->
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+
+  <!-- Colours the browser/status bar to match the app background (#050806 = --bg in styles.css). The two
+       apple-* tags make 'Add to Home Screen' open the app full-screen on iOS with a translucent status bar. -->
   <meta name="theme-color" content="#050806" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>ashr</title>
   <meta name="description" content="ashr - Mobile triage controller for coding agents" />
+
+  <!-- PWA manifest and icon (both static files next to this page, served by hub/server.mjs). -->
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
+
+  <!-- Two stylesheets: styles.css is the whole app; ai-explain.css is only the 'Ask a model' bar inside
+       cards (kept separate because it belongs to ai-explain-ui.js). -->
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="ai-explain.css" />
 </head>

@@ -5,6 +5,19 @@
 // answered by the in-browser mock instead.
 // Talks to the hub. Pairs once with ?pair=<code>, then sends the session token.
 // Demo data shows only with ?demo=1. No token and no demo means "not paired".
+//
+// How it fits: app.js imports decide/say/kill/subscribe/isDemo/authState/onUnpaired from here;
+//   ai-explain-ui.js imports explainAsk. Everything talks to the hub that served the page (same
+//   origin, so no CORS), using the endpoints in docs/CONTRACT.md. mock.js supplies fake data when
+//   the URL has ?demo=1.
+// Startup sequence (top-level await runs before app.js sees the exports): read the stored token ->
+//   accept a legacy ?t= token -> redeem ?pair=<code> -> scrub both from the address bar -> derive
+//   `authState`.
+// Security notes: the token lives in localStorage (survives reloads, readable by scripts on this
+//   origin); the pairing code is single use and expires after 10 minutes, so a shared screenshot of
+//   the QR is useless once the phone has paired; SSE puts the token in the URL (?t=) because
+//   EventSource cannot set headers, so the hub must not log query strings.
+// Test: test/app-touch.test.mjs imports this module under Node (hence the isBrowser guards).
 import { createDemo } from "./mock.js";
 
 // This module is also imported by node tests, where there is no window; every browser-only step is guarded by this flag.
@@ -17,6 +30,8 @@ const pairCode = params.get("pair");
 const legacy = params.get("t");
 const wantsDemo = params.get("demo") === "1";
 
+// `token` is the live session token ('' when none); `pairFailed` records a rejected code so the UI
+// can say so.
 let token = (isBrowser && typeof localStorage !== "undefined" ? localStorage.getItem(TOKEN_KEY) : null) || "";
 let pairFailed = false;
 
@@ -50,17 +65,29 @@ if (isBrowser && (pairCode || legacy)) {
   }
 }
 
+// Public flags read once by app.js. `authState` decides whether to connect, show the demo, or show
+// the 'not paired' screen.
 export const isDemo = wantsDemo;
 // "demo" | "ok" | "unpaired" | "pairfailed"
 export const authState = wantsDemo ? "demo" : pairFailed ? "pairfailed" : token ? "ok" : "unpaired";
 
+// In demo mode `demo` answers every request locally; otherwise it is null and real fetches are used.
 const demo = isDemo ? createDemo() : null;
 const lostListeners = new Set();
 
 // Register a callback to run when the hub rejects our token (e.g. it was revoked).
+/**
+ * @param {() => void} fn - callback run when the hub rejects our token.
+ * @returns {Set<Function>} (the Set itself; callers ignore it).
+ */
 export const onUnpaired = (fn) => lostListeners.add(fn);
 
 // Forget the stored token and tell listeners the app must be re-paired.
+/**
+ * Called on any 401: forgets the token so the next load starts clean, and notifies listeners
+ * (app.js shows the 'not paired' screen).
+ * @returns {void}
+ */
 function authLost() {
   token = null;
   if (typeof localStorage !== "undefined") localStorage.removeItem(TOKEN_KEY);
@@ -69,6 +96,12 @@ function authLost() {
 
 // POST JSON to the hub with the Bearer token. A 401 triggers re-pairing; other
 // failures throw an Error carrying `.status` so callers can react (e.g. 410 = expired).
+/**
+ * @param {string} path - hub endpoint such as '/api/decide'.
+ * @param {object} body - JSON payload.
+ * @returns {Promise<object>} parsed JSON reply ({} if the body is empty or not JSON).
+ * @throws {Error} with `.status` set to the HTTP status for any non-2xx reply.
+ */
 async function post(path, body) {
   if (demo) return demo.post(path, body);
   const res = await fetch(path, {
@@ -86,12 +119,22 @@ async function post(path, body) {
 }
 
 // Thin wrappers for each hub endpoint.
+/**
+ * Thin wrappers, one per hub endpoint. decide: allow/deny an ask (message optional). say: type a
+ * message into the agent's tmux pane. kill: send Ctrl-C. explainAsk: plain-English explanation
+ * from the 'gemini' or 'grok' provider. All return the reply JSON or throw (see post).
+ */
 export const decide = (askId, behavior, message) => post("/api/decide", { askId, behavior, message });
 export const say = (sessionId, text) => post("/api/say", { sessionId, text });
 export const kill = (sessionId) => post("/api/kill", { sessionId });
 export const explainAsk = (askId, provider) => post("/api/explain", { askId, provider });
 
 // EventSource hides the status code, so ask the stream URL directly after an error.
+/**
+ * @param {string} url - the SSE URL that just failed.
+ * @returns {Promise<boolean>} true if the hub answers 401 (token rejected), false for any network
+ *   failure; lets the caller tell 'must re-pair' from 'hub temporarily unreachable'.
+ */
 async function wasRejected(url) {
   // Abort right after the status line so the stream is not actually held open.
   const ctl = new AbortController();
@@ -107,6 +150,11 @@ async function wasRejected(url) {
 
 // onState(state), onConn("live" | "offline" | "demo" | "connecting")
 // Start receiving live state. Returns an unsubscribe function.
+/**
+ * @param {(state: object) => void} onState - called with each full snapshot {sessions, asks, log}.
+ * @param {(status: 'connecting'|'live'|'offline'|'demo') => void} onConn - connection indicator.
+ * @returns {() => void} unsubscribe function that stops reconnects, polling and the stream.
+ */
 export function subscribe(onState, onConn) {
   if (demo) {
     onConn("demo");
@@ -119,6 +167,8 @@ export function subscribe(onState, onConn) {
   let lastFrame = 0;
 
   // Safety net: if a proxy holds the stream back, poll the state instead.
+  // Poll /api/state every 1.5 s but only when no SSE frame arrived in the last 2.5 s, so the
+  // normal case costs nothing extra and a buffering proxy cannot freeze the UI.
   const poll = async () => {
     if (stopped || !token || Date.now() - lastFrame < 2500) return;
     try {
@@ -129,6 +179,8 @@ export function subscribe(onState, onConn) {
   };
   const pollTimer = setInterval(poll, 1500);
 
+  // (Re)open the stream. EventSource reconnects by itself, but it hides HTTP status codes, so on
+  // error we close it and manage retries ourselves with exponential backoff.
   const open = () => {
     if (stopped || !token) return;
     onConn("connecting");

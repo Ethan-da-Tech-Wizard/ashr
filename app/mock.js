@@ -1,5 +1,12 @@
 // File: app/mock.js
 // Demo data so the app works with no hub (screenshots, judges' phones, backup demo).
+//
+// How it fits: api.js creates one demo with createDemo() ONLY when the URL contains ?demo=1, and
+//   then routes every post() and subscribe() call here instead of the network. The shapes match the
+//   hub's real snapshot ({sessions, asks, log}) and replies, so app.js cannot tell the difference.
+// Scripted behaviour: five agents, two pending asks, a third ask appearing after 9 s, and a decision
+//   moving its agent to `working` and then `done` after 6 s, so a presenter can swipe through a full
+//   story with no laptop. Nothing is persisted and nothing leaves the browser.
 // Indirection so timestamps stay in one place.
 const now = () => Date.now();
 
@@ -36,12 +43,18 @@ function seed() {
 }
 
 // In-browser stand-in for the hub: same post() and subscribe() shape as api.js, no network.
+/**
+ * @returns {{post: (path: string, body: object) => Promise<object>, subscribe: (fn: Function) => Function,
+ *   reset: () => void}} the fake hub. `post` mimics /api/decide, /api/say, /api/kill and /api/explain;
+ *   `subscribe(fn)` calls fn with a snapshot now and after every change and returns an unsubscribe.
+ */
 export function createDemo() {
   let state = seed();
   const subs = new Set();
   // Send each subscriber its own deep copy so UI code cannot mutate the demo's state.
   const emit = () => subs.forEach((fn) => fn(structuredClone(state)));
 
+  // Patch one session and refresh its updatedAt, like hub/state.mjs upsertSession.
   const setSession = (id, patch) => {
     state.sessions = state.sessions.map((s) => (s.id === id ? { ...s, ...patch, updatedAt: now() } : s));
   };
@@ -77,6 +90,10 @@ export function createDemo() {
     return {};
   };
 
+  /**
+   * @param {(state: object) => void} fn - receives structured clones of the state.
+   * @returns {() => void} unsubscribe (also cancels the scripted third ask if it has not fired).
+   */
   const subscribe = (fn) => {
     subs.add(fn);
     fn(structuredClone(state));
@@ -92,5 +109,6 @@ export function createDemo() {
     return () => { subs.delete(fn); clearTimeout(timer); };
   };
 
+  // `reset` restores the opening scene, handy between rehearsals.
   return { post, subscribe, reset: () => { state = seed(); emit(); } };
 }

@@ -4,6 +4,23 @@
 // Fail-open by design: if the hub is unreachable, the input is empty or malformed, or the
 // reply cannot be parsed, the tool call is allowed so that ashr outages never block the user.
 // Only an explicit deny from the hub stops the call.
+//
+// How it fits: registered as a Gemini CLI BeforeTool/notification hook (see docs and
+//   scripts/start-agents.sh). Claude Code needs no script because it has native HTTP hooks
+//   (hooks/claude-settings.json). This script is the Gemini equivalent: it converts Gemini's hook
+//   JSON into the same request the hub's /hook/permission and /hook/event expect, so one hub, one
+//   guard (guard/rules.mjs) and one phone UI serve every agent. Runs once per hook invocation (a
+//   short-lived process), so it keeps no state.
+// Why fail-open: a `{continue: true}` reply only means "ashr does not object"; it does not
+//   pre-approve anything, so Gemini still applies its own confirmation rules. The design choice is
+//   that an ashr outage must not freeze a developer's agent. The cost is that while the hub is down
+//   NOTHING is checked for Gemini. Change the three `continue: true` fallbacks below to
+//   `continue: false` if you prefer fail-closed. This is documented here because it is a deliberate
+//   safety trade-off, not an oversight.
+// Inputs/outputs: stdin JSON (event, tool_name, tool_input, session_id, cwd); stdout one JSON line
+//   {continue: boolean, stopReason?: string}. Env: PORT (hub port, default 7777), TMUX_PANE.
+// Test: none exists for this hook (it needs a live Gemini CLI); the mapTool logic is simple enough
+//   to check by piping sample JSON into it with a hub running.
 import http from 'node:http';
 
 // Hub port; the hub is always addressed on loopback.

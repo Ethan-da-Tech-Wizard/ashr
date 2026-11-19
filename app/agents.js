@@ -12,17 +12,32 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
 
 // "zazmattaz-debug" -> "zazmattaz". Returns "" when there is no usable owner.
+/**
+ * @param {unknown} owner - GitHub login from the hub.
+ * @returns {string} the part before the first '-' (a short display name), or '' for invalid or
+ *   'unknown' owners. Validation matters because the value is later used in a URL.
+ */
 export function ownerName(owner) {
   if (typeof owner !== "string" || !LOGIN.test(owner) || owner === "unknown") return "";
   return owner.split("-")[0];
 }
 
 // Avatar URL for a valid owner login, else "". Uses github.com's public .png endpoint, no API key.
+/**
+ * @param {unknown} owner
+ * @returns {string} avatar URL, or '' when there is no valid owner. The request goes to github.com
+ *   from the phone's browser (the one third-party request the app makes on its own); the img tag
+ *   sets referrerpolicy=no-referrer so the hub's address is not leaked.
+ */
 export function ownerPhoto(owner) {
   return ownerName(owner) ? `https://github.com/${encodeURIComponent(owner)}.png?size=64` : "";
 }
 
 // The tile shown in the top row and in the talk sheet.
+/**
+ * @param {object} session - {agent, owner}.
+ * @returns {string} HTML for the character tile with the optional photo badge.
+ */
 export function tileHtml(session) {
   const s = session && typeof session === "object" ? session : {};
   const name = ownerName(s.owner);
@@ -35,6 +50,11 @@ export function tileHtml(session) {
 }
 
 // Tile plus title, owner handle and "<agent> · <state>" text, for the agent row.
+/**
+ * @param {object} session - {title, owner, agent}.
+ * @param {string} [stateWord] - display word for the session state (e.g. 'needs you').
+ * @returns {string} inner HTML of one agent chip in the herd row.
+ */
 export function agentHtml(session, stateWord = "") {
   const s = session && typeof session === "object" ? session : {};
   const name = ownerName(s.owner);

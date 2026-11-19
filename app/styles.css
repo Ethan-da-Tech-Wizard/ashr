@@ -1,3 +1,29 @@
+/* ==============================================================================
+ * File: app/styles.css
+ * Purpose: all styling for the ashr phone app (app/index.html and the markup that app.js,
+ *   card.js, agents.js and fx.js generate).
+ *
+ * How it fits: served as a static file by hub/server.mjs. Class names are shared contracts with
+ *   the JS: app.js toggles .hidden, .show, .zero, .open, .dragging, [data-depth], [data-leaving];
+ *   sheets.js toggles .on on chips; fx.js adds .sealing, .burning, .shrugging, .slash, .embers.
+ *   Do not rename those without updating the scripts. ai-explain.css holds the AI-explain bar.
+ *
+ * Design system: a dark "ember" theme. Every colour is a custom property in :root below, so a
+ *   re-skin is a one-block edit. Phone-first: the body is a centred column of max 520px; safe-area
+ *   insets keep content clear of notches and the home indicator.
+ *
+ * Layers (z-index): cards 0-3 by depth (front card highest), .card[data-leaving] 10 so a card
+ *   being burnt stays above the stack, .unpaired overlay 50. Native <dialog> sheets use the browser
+ *   top layer and need no z-index.
+ *
+ * Animation timing (must match fx.js): seal 1.0 s, shrug 1.15 s, burn 1.55 s; reduced-motion at the
+ *   end of the file disables all card animation.
+ * ============================================================================== */
+
+/* Palette and sizes. --ember (lime) = primary/allow accent, --rust (red) = deny/high risk, --amber =
+   medium risk, --field (green) = working, --sky = demo/info, --on-accent = dark text used ON ember
+   buttons for contrast, --radius = base corner radius. Fonts fall back to system UI fonts so the
+   app needs no web-font download. */
 :root {
   --bg: #050806;
   --surface: #0d130f;
@@ -17,18 +43,23 @@
   --sans: "Inter Tight", "SF Pro Display", system-ui, -apple-system, sans-serif;
 }
 
+/* Base: border-box sizing; overscroll-behavior-y none stops pull-to-refresh and rubber-banding from
+   fighting the swipe gestures; the body gradient adds a faint green glow at the top edge. */
 * { box-sizing: border-box; }
 html { overscroll-behavior-y: none; }
 html, body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); -webkit-font-smoothing: antialiased; }
 body { padding: env(safe-area-inset-top) 0 calc(env(safe-area-inset-bottom) + 40px); max-width: 520px; margin: 0 auto;
   background: radial-gradient(120% 45% at 50% 0%, rgba(140, 255, 50, 0.13) 0%, transparent 70%), var(--bg); min-height: 100vh;
   overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }
+
+/* Shared helpers: buttons inherit font and colour (browsers do not by default) and get no grey tap flash. */
 main { padding: 0 20px; }
 button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .muted { color: var(--muted); }
 .small { font-size: 13px; }
 .mono { font-family: var(--mono); }
 
+/*  */
 /* top bar */
 .top { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px 6px; }
 .brand { display: flex; gap: 9px; align-items: center; font-weight: 800; letter-spacing: -0.03em; font-size: 21px; }
@@ -40,9 +71,14 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
 .conn[data-state="demo"] { color: var(--sky); }
 
 /* agent row: a line mark per agent, the owner's photo, and who is working on it */
+
+/* The herd row scrolls sideways with the scrollbar hidden (it is a swipe strip, not a list). */
 .herd { display: flex; gap: 12px; overflow-x: auto; padding: 12px 20px 6px; scrollbar-width: none; }
 .herd::-webkit-scrollbar { display: none; }
 .agent { flex: none; width: 88px; border: 0; background: none; padding: 0; text-align: center; }
+
+/* Agent tile: a 60px rounded square. Base colour is neutral; the .claude/.codex/.gemini/.grok
+   classes (taken from session.agent) give each agent its brand-like gradient. */
 .tile { position: relative; display: grid; place-items: center; width: 60px; height: 60px; margin: 0 auto; border-radius: 19px;
   background: linear-gradient(180deg, #8d93a0, #4d525e);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 10px 20px -12px #000; transition: filter 0.3s; }
@@ -51,6 +87,9 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
 .tile.gemini { background: linear-gradient(180deg, #ff4fa3, #ff3b6b); }
 .tile.grok { background: linear-gradient(180deg, #d2d4dc, #7d808d); }
 .tile .mark { width: 46px; height: 46px; }
+
+/* State styling: needs_you pulses a lime ring (keyframes `ring`), done/idle are desaturated, failed and
+   signed_out get a red ring. The .pip dot in the corner repeats the state as a colour. */
 .agent.needs_you .tile { animation: ring 1.6s infinite;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 0 0 3px var(--bg), 0 0 0 5px var(--ember), 0 0 20px 2px rgba(140, 255, 50, 0.5); }
 .agent.done .tile, .agent.idle .tile { filter: saturate(0.35) brightness(0.75); }
@@ -60,6 +99,9 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
 .agent.working .pip { background: var(--field); }
 .agent.done .pip { background: #ffffff; }
 .agent.failed .pip, .agent.signed_out .pip { background: var(--rust); }
+
+/* Owner photo badge in the tile corner; the ::before initial is the fallback shown behind the <img>
+   (app.js removes a broken <img> so the initial stays visible). */
 .tile .face { position: absolute; right: -6px; bottom: -6px; width: 24px; height: 24px; border-radius: 50%; overflow: hidden;
   border: 2.5px solid var(--bg); background: var(--soft); display: grid; place-items: center; }
 .tile .face::before { content: attr(data-initial); font-size: 11px; font-weight: 800; color: var(--ember); }
@@ -75,15 +117,25 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
 .empty { color: var(--muted); font-size: 14px; padding: 14px 2px; }
 .herd .empty { padding: 18px 0 6px; }
 
+/* Hero: the big count of requests waiting for you (.zero greys it out when there are none). */
 .hero { display: flex; justify-content: space-between; align-items: baseline; padding: 14px 4px 14px; }
 .count { font-size: 30px; font-weight: 800; letter-spacing: -0.04em; color: var(--ember); font-variant-numeric: tabular-nums; text-shadow: 0 0 18px rgba(140, 255, 50, 0.5); }
 .count.zero { color: var(--muted); text-shadow: none; }
 .count-word { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
 
+/*  */
 /* the card stack */
+
+/* The stack is a fixed-height positioning context; each .card is absolutely positioned on top of
+   the others and offset by [data-depth] (set in app.js renderStack). :empty shows a dashed 'All quiet'
+   placeholder via ::before, so there is no extra element to manage. */
 .stack { position: relative; height: min(480px, 60vh); margin: 0 6px; }
 .stack:empty { height: 180px; display: grid; place-content: center; text-align: center; border-radius: var(--radius); border: 2px dashed var(--line); color: var(--muted); }
 .stack:empty::before { content: "All quiet.\A Safe commands pass on their own."; white-space: pre-line; font-size: 15px; line-height: 1.5; }
+
+/* The approval card. will-change: transform and the transform transition make drags smooth;
+   `.dragging` (below) removes the transition so the card follows the finger exactly. touch-action: pan-y
+   is REQUIRED for horizontal swipes to work (test/app-touch.test.mjs asserts it). */
 .card {
   --panel: #151916;
   position: absolute; inset: 0; border-radius: 36px; border: 7px solid #000; background: #000; color: var(--ink);
@@ -98,10 +150,15 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
                     repeating-linear-gradient(-45deg, rgba(140, 255, 50, 0.08) 0px, rgba(140, 255, 50, 0.08) 3px, transparent 3px, transparent 9px);
   pointer-events: none; z-index: 3; opacity: 0.7;
 }
+
+/* High-risk cards glow red instead of green. */
 .card.high { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.09), 0 26px 50px -22px rgba(255, 77, 77, 0.55); }
 /* The panel inside the card scrolls, and a scroll area ignores its parents' touch rules.
    So say it on every part of the card: up and down may scroll, sideways is ours to swipe. */
 .card * { touch-action: pan-y; }
+
+/* Depth stacking: 0 = front (interactive); 1-2 fan out behind with a small tilt and no pointer events so
+   only the front card can be swiped; 3+ are invisible but kept for the entrance animation. */
 .card[data-depth="0"] { z-index: 3; }
 .card[data-depth="1"] { z-index: 2; transform: translate(-14px, 10px) rotate(-4deg) scale(0.96); pointer-events: none; }
 .card[data-depth="2"] { z-index: 1; transform: translate(14px, 18px) rotate(4deg) scale(0.92); pointer-events: none; opacity: 0.8; }
@@ -109,6 +166,9 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
 .card[data-depth="1"] > *, .card[data-depth="2"] > * { opacity: 0.4; }
 .card[data-leaving] { z-index: 10; }
 .card.dragging { transition: none; }
+
+/* Swipe feedback layers driven inline by swipe.js: a colour wash plus a rotated ALLOW/DENY stamp whose
+   opacity follows how far the card has moved (0 to 1 at the 90px threshold). */
 .card .wash { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; z-index: 4; }
 .card .wash.allow { background: linear-gradient(90deg, transparent, rgba(140, 255, 50, 0.3)); }
 .card .wash.deny { background: linear-gradient(270deg, transparent, rgba(255, 77, 77, 0.35)); }
@@ -117,6 +177,9 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
 .card .stamp.deny { left: 20px; color: var(--rust); transform: rotate(-8deg); }
 
 /* blurred art behind the folder */
+
+/* Header art: soft blurred colour blobs (decorative, no image file). High-risk cards swap to a red/orange
+   palette. */
 .art { position: absolute; inset: 0 0 46% 0; border-radius: 28px 28px 0 0; overflow: hidden; background: #0b2912; }
 .art i { position: absolute; inset: -30%; filter: blur(22px) saturate(1.35);
   background:
@@ -135,6 +198,9 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
 .art-tag span { display: block; font-size: 13px; opacity: 0.9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* the folder panel */
+
+/* The dark panel at the bottom of the card. It is 68% tall, and grows to 88% when `.open` is set (the
+   'What is this?' drawer). The .tab sticking up on its top-left edge holds the risk badge. */
 .panel { position: absolute; left: 0; right: 0; bottom: 0; height: 68%; background: var(--panel); border-radius: 0 26px 28px 28px;
   display: flex; flex-direction: column; padding: 4px 18px 16px; transition: height 0.32s cubic-bezier(0.2, 0.8, 0.2, 1); z-index: 2; }
 .card.open .panel { height: 88%; }
@@ -148,6 +214,9 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
 .risk.high { background: var(--rust); color: #fff; }
 .risk.medium { color: var(--amber); background: rgba(255, 176, 32, 0.14); }
 .risk.low { color: var(--ember); }
+
+/* The only scrolling region of the card (scrollbar hidden); the plain-English sentence, exact command
+   and the hidden `.brief` drawer live here. */
 .panel-body { flex: 1; min-height: 0; overflow-y: auto; padding-top: 10px; scrollbar-width: none; }
 .panel-body::-webkit-scrollbar { display: none; }
 .plain { margin: 0; font-size: 23px; line-height: 1.18; font-weight: 700; letter-spacing: -0.02em; overflow-wrap: anywhere; }
@@ -159,6 +228,8 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
 .points li { position: relative; padding-left: 18px; }
 .points li::before { content: ""; position: absolute; left: 2px; top: 7px; width: 6px; height: 6px; border-radius: 50%; background: var(--ember); }
 .card.high .points li::before { background: var(--rust); }
+
+/* Footer: elapsed waiting time on the left (updated every second by app.js), action pills on the right. */
 .foot { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; padding-top: 10px; }
 .wait { display: flex; align-items: baseline; gap: 7px; }
 .waiting { font-size: 38px; line-height: 1; font-weight: 700; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
@@ -169,6 +240,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
 .pill.ghost { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.18); }
 .pill:active { transform: scale(0.96); }
 
+/*  */
 /* the round buttons under the stack */
 .decide { display: flex; justify-content: center; align-items: center; gap: 20px; margin: 30px 0 10px; }
 .decide.hidden, .hint.hidden { display: none; }
@@ -181,6 +253,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
 .round:active { transform: scale(0.9); }
 .hint { text-align: center; font-size: 12px; color: var(--muted); margin: 0 0 28px; }
 
+/* Generic sheet buttons. */
 .btn { border: 0; border-radius: 18px; padding: 15px 16px; font-weight: 700; font-size: 16px; background: var(--soft); color: var(--ink); }
 .btn.allow { background: var(--ember); color: var(--on-accent); }
 .btn.deny { background: var(--rust); color: #fff; }
@@ -189,8 +262,11 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
 
 .section-title { font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin: 8px 4px 10px; }
 
+/*  */
 /* guard log */
 .log { display: grid; gap: 8px; }
+
+/* One log row: time | summary (monospace, truncated) | verdict pill (auto/allow = green, deny/timeout = red). */
 .entry { display: grid; grid-template-columns: 44px 1fr auto; gap: 10px; align-items: center; font-size: 13px; padding: 12px 14px; border-radius: 18px; background: var(--surface); border: 1px solid var(--line); }
 .entry .when { color: var(--muted); font-variant-numeric: tabular-nums; }
 .entry .what { font-family: var(--mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -198,7 +274,11 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
 .verdict.allow, .verdict.auto { color: var(--ember); background: rgba(140, 255, 50, 0.12); }
 .verdict.deny, .verdict.timeout { color: var(--rust); background: rgba(255, 77, 77, 0.14); }
 
+/*  */
 /* sheets */
+
+/* Bottom sheets are native <dialog>s pinned to the bottom (margin: auto auto 0). The inner element has the
+   rounded top corners; ::backdrop dims and blurs the page behind. */
 .sheet { border: 0; padding: 0; background: transparent; width: 100%; max-width: 520px; margin: auto auto 0; color: var(--ink); }
 .sheet::backdrop { background: rgba(0, 0, 0, 0.6); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
 .sheet-inner { background: var(--surface); border: 1px solid var(--line); border-bottom: 0; border-radius: 30px 30px 0 0; padding: 22px 20px calc(env(safe-area-inset-bottom) + 20px); display: grid; gap: 14px; }
@@ -211,9 +291,12 @@ textarea:focus { outline: 2px solid rgba(140, 255, 50, 0.5); }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip { border: 1px solid var(--line); background: var(--soft); color: var(--ink); border-radius: 99px; padding: 9px 14px; font-size: 14px; font-weight: 500; }
 .chip.on { background: var(--ember); border-color: var(--ember); color: var(--on-accent); }
+
+/* Diff view for the 'See change' dialog; .add and .del colour + and - lines (classes added by app.js diffHtml). */
 .diff-pre { font-family: var(--mono); font-size: 12px; line-height: 1.5; overflow: auto; max-height: 50vh; background: var(--soft); border-radius: 16px; padding: 14px; margin: 0; }
 .add { color: var(--ember); } .del { color: var(--rust); }
 
+/*  */
 /* talk sheet, styled like a chat */
 .chat { min-height: 62vh; grid-template-rows: auto 1fr auto; padding-top: 14px;
   background: radial-gradient(80% 40% at 80% 30%, rgba(140, 255, 50, 0.08), transparent), var(--surface); }
@@ -233,15 +316,21 @@ textarea:focus { outline: 2px solid rgba(140, 255, 50, 0.5); }
 .send-btn svg { width: 19px; height: 19px; }
 #mic.listening, #redo-mic.listening { background: var(--ember); color: var(--on-accent); }
 
+/* Toast: hidden by default (opacity 0, pushed down); `.show` slides it in. app.js hides it after 1.8 s. */
 .toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 24px); transform: translate(-50%, 20px); opacity: 0; background: var(--ink); color: var(--bg); padding: 11px 18px; border-radius: 99px; font-weight: 600; font-size: 14px; transition: 0.25s; pointer-events: none; z-index: 60; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
+/* Full-screen 'not paired' overlay (z-index 50) shown by app.js when no valid token exists. */
 .unpaired { position: fixed; inset: 0; z-index: 50; background: radial-gradient(120% 60% at 50% 0%, rgba(140, 255, 50, 0.16), var(--bg) 70%); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 32px; text-align: center; }
 .unpaired img { margin-bottom: 14px; border-radius: 16px; box-shadow: var(--shadow); }
 .unpaired .big { font-size: 52px; line-height: 0.95; font-weight: 800; letter-spacing: -0.05em; color: var(--ember); }
 .unpaired .sub { color: var(--muted); font-size: 17px; max-width: 280px; }
 
+/*  */
 /* ---------- fire effects (fx.js) ---------- */
+
+/* overflow hidden clips the effects to the card shape; isolation creates a stacking context so the
+   blend/mask effects below cannot leak onto neighbours. */
 .card { overflow: hidden; isolation: isolate; }
 
 /* Allow: flame seal stamps down, card glows, then glides right */
@@ -274,6 +363,9 @@ textarea:focus { outline: 2px solid rgba(140, 255, 50, 0.5); }
   background: linear-gradient(90deg, transparent, var(--rust) 15%, var(--amber) 45%, #fff6e0 55%, var(--amber) 65%, var(--rust) 85%, transparent);
   box-shadow: 0 0 22px 6px rgba(255, 120, 40, 0.55);
   animation: slash-cut 0.22s 0.45s cubic-bezier(0.7, 0, 0.3, 1) forwards, slash-fade 0.35s 1s forwards; }
+
+/* Burn: shake twice, then `burn-away` slides the mask (below) upward so the card dissolves from the
+   bottom, with heat glow (::after) and rising embers. Delays (0.45-1.0 s) sequence slash then burn. */
 .card.burning { border-color: var(--rust); animation: burn-shake 0.18s 0.6s 2, burn-away 0.7s 0.82s ease-in forwards; }
 .card.burning::after { content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none;
   background: linear-gradient(0deg, rgba(255, 90, 60, 0.55), rgba(255, 176, 32, 0.25) 40%, transparent 75%);
@@ -296,4 +388,7 @@ textarea:focus { outline: 2px solid rgba(140, 255, 50, 0.5); }
   0% { opacity: 0; transform: translate(0, 0) scale(1); }
   15% { opacity: 1; }
   100% { opacity: 0; transform: translate(var(--drift), -90px) scale(0.3); } }
+
+/* Accessibility: users who ask for reduced motion get no card animation at all; fx.js separately
+   shortens removal to a 250 ms fade. */
 @media (prefers-reduced-motion: reduce) { .card, .card * { animation: none !important; transition: opacity 0.2s !important; } }

@@ -3,6 +3,10 @@
 // belongs to a person: all of one owner's agents wear the same one. Colour says which agent.
 // Pure string builders, no DOM, so node can test them.
 
+// How it fits: agents.js draws it on every agent tile, faces.js reuses characterParts() for the
+// decision stamps, and app.js stores the chosen head shape in card.dataset.style. There are only six
+// shapes (TOPS), picked from a hash of the owner's GitHub name, so a person is recognisable at a glance
+// and the choice is the same on every device with no storage.
 // Shared colours; everything is drawn on a 64x64 grid so characters scale cleanly.
 const INK = "#15171a";
 const W = "#fff";
@@ -18,6 +22,7 @@ const TOPS = {
   fin: `<path d="M32 12c6 4 8.5 9 7.5 15h-14c-2-6 .5-11 6.5-15z" fill="${W}" stroke="${W}" stroke-width="2" stroke-linejoin="round"/>`,
   crown: `<path d="M20 28l1-12 6 6 5-8 5 8 6-6 1 12z" fill="${W}" stroke="${W}" stroke-width="2.4" stroke-linejoin="round"/>`,
 };
+// List of valid style names, in definition order (styleFor indexes into it).
 export const STYLES = Object.keys(TOPS);
 
 const BODY = `<ellipse cx="32" cy="40" rx="18" ry="15.5" fill="${W}"/>
@@ -39,6 +44,11 @@ const MOODS = {
 
 // Stable pick of a head shape from a GitHub name. Same name, same shape, on every phone.
 // Simple string hash (31x + char, mod 9973) so the choice is deterministic across devices and sessions.
+/**
+ * @param {string} owner - GitHub login (any case; empty is allowed).
+ * @returns {string} one of STYLES. Deterministic: the hash h = (31*h + charCode) mod 9973 is a small
+ *   prime modulus keeping numbers tiny; h % 6 chooses the shape.
+ */
 export function styleFor(owner) {
   const name = String(owner || "").toLowerCase();
   let h = 7;
@@ -48,6 +58,12 @@ export function styleFor(owner) {
 
 // The character alone, on the 64 grid. hand: "up" | "down" | undefined.
 // Unknown style or mood falls back to defaults so bad input still renders. With a hand, the figure shifts left to make room for it.
+/**
+ * @param {string} style - key of TOPS; unknown values use 'rays'.
+ * @param {'idle'|'happy'|'cross'|'flat'} [mood='idle'] - facial expression.
+ * @param {'up'|'down'} [hand] - optional thumb gesture.
+ * @returns {string} SVG fragment (no <svg> wrapper) on a 64x64 grid.
+ */
 export function characterParts(style, mood = "idle", hand) {
   const figure = `${TOPS[style] || TOPS.rays}${BODY}${MOODS[mood] || MOODS.idle}`;
   const placed = hand ? `<g transform="translate(-5 0)">${figure}</g>${thumb(hand === "up")}` : figure;
@@ -55,6 +71,13 @@ export function characterParts(style, mood = "idle", hand) {
 }
 
 // Wrap the parts in a standalone <svg>; aria-hidden because it is decoration.
+/**
+ * @param {string} style
+ * @param {string} [mood='idle']
+ * @param {'up'|'down'} [hand]
+ * @param {string} [cls='mark'] - CSS class on the <svg> (styles.css sizes it).
+ * @returns {string} complete inline <svg> markup.
+ */
 export function characterSvg(style, mood = "idle", hand, cls = "mark") {
   return `<svg class="${cls}" viewBox="0 0 64 64" aria-hidden="true">${characterParts(style, mood, hand)}</svg>`;
 }

@@ -1,12 +1,23 @@
 // Turns an agent's request into plain English: one sentence, then up to three short points.
 // Pure functions, no DOM, so node can test them. explain(ask, agentName) -> { headline, points }
+//
+// How it fits: card.js calls explain() for every card; the output is the big plain-English sentence
+// and the bullet list in the 'What is this?' drawer. It runs entirely in the browser (offline); the
+// optional AI explanations are a separate path (ai-explain-ui.js -> hub). These sentences are only
+// wording: the risk level shown on the card comes from the hub's guard, never from here.
+// Limits: recognises about 25 common commands; anything else gets a generic 'Run ...' sentence.
+// Test: test/explain.test.mjs.
 
 // Words that suggest a credentials file; only affects the wording shown, not the risk score (the hub's guard decides that).
 const SECRET = /(^|\/)\.env(\.|$)|\.pem$|\.key$|id_rsa|credentials|secrets?\b/i;
+/** @param {string} s - text. @param {number} [n=48] - max length. @returns {string} s cut to n with an ellipsis. */
 const short = (s, n = 48) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+/** @param {string} cmd - command text. @returns {string[]} whitespace-separated words. */
 const words = (cmd) => cmd.trim().split(/\s+/);
 // Positional arguments of a split command (flags removed).
+/** @param {string[]} w - command words. @param {number} [from=1] - index to start at. @returns {string[]} arguments that are not -flags. */
 const args = (w, from = 1) => w.slice(from).filter((x) => !x.startsWith("-"));
+/** @param {string[]} items - names. @returns {string} comma list shortened to 48 chars, or 'some files' if empty. */
 const list = (items) => short(items.join(", ")) || "some files";
 
 // Order matters: more specific rules (reading a secrets file) precede general ones (reading any file).
@@ -43,6 +54,10 @@ const BASH = [
 ];
 
 // Describe one simple command. Output redirections are removed first so "echo x > f" is judged by its command word.
+/**
+ * @param {string} cmd - one simple command.
+ * @returns {string} sentence from the first matching BASH rule, or a quoted generic fallback.
+ */
 function bashPart(cmd) {
   const c = String(cmd ?? "");
   const w = words(c.replace(/\s+\d?>+\s*\S+/g, ""));
@@ -51,6 +66,10 @@ function bashPart(cmd) {
 }
 
 // Describe a chain (&&, ||, ;) as "A, then b, then c", using at most three steps and only the first sentence of each.
+/**
+ * @param {string} cmd - possibly chained command (&&, ||, ;).
+ * @returns {string} one sentence; chains list at most three steps ('A, then b, then c').
+ */
 function bash(cmd) {
   const c = String(cmd ?? "");
   const parts = c.split(/\s*(?:&&|\|\||;)\s*/).filter(Boolean);
@@ -61,6 +80,10 @@ function bash(cmd) {
 }
 
 // One-sentence summary by tool type; Bash is delegated to the command rules above.
+/**
+ * @param {object} ask - pending ask {tool, summary}.
+ * @returns {string} the one-sentence description shown at the top of the card.
+ */
 function headline(ask) {
   const tool = ask?.tool || "";
   const target = String(ask?.summary || "").replace(/^\w+\s+/, "");
@@ -80,6 +103,12 @@ const WORST = {
 };
 
 // Return { headline, points } for an ask. Safe with null or malformed input.
+/**
+ * @param {object|null} ask - pending ask; null/malformed gives a generic placeholder.
+ * @param {string} [agentName='The agent'] - used in the 'Allow and <agent> does it now' point.
+ * @returns {{headline: string, points: string[]}} points are the guard's reasons (if any), a risk
+ *   sentence and the allow/deny consequence.
+ */
 export function explain(ask, agentName = "The agent") {
   const agent = agentName || "The agent";
   if (!ask || typeof ask !== "object") {
