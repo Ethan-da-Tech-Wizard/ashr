@@ -14,13 +14,16 @@
   <link rel="stylesheet" href="ai-explain.css" />
 </head>
 <body>
+  <!-- Top bar: brand and live connection status (connecting / live / offline / demo mode). -->
   <header class="top">
     <div class="brand"><img src="icon.svg" alt="" width="26" height="26" /> ashr</div>
     <div id="conn" class="conn" data-state="connecting" role="status" aria-live="polite">connecting</div>
   </header>
 
+  <!-- Row of agent tiles, filled in by app.js (renderHerd). -->
   <section id="herd" class="herd" aria-label="Your agents"></section>
 
+  <!-- Main column: pending-approval count, the swipeable card stack, round buttons, then the guard log. -->
   <main>
     <section class="hero">
       <div><span id="count" class="count">0</span> <span id="count-word" class="count-word">need you</span></div>
@@ -29,6 +32,7 @@
 
     <section id="stack" class="stack" aria-live="polite"></section>
 
+    <!-- Round buttons act on the top card, as an alternative to swiping: deny, redirect, allow. -->
     <div id="decide" class="decide">
       <button id="btn-deny" class="round deny" aria-label="Deny">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>
@@ -46,6 +50,7 @@
     <section id="log" class="log"></section>
   </main>
 
+  <!-- Agent detail sheet: shows the agent's folder, lets you message it (typed or dictated) or stop it. Driven by sheets.js. -->
   <dialog id="sheet" class="sheet">
     <form method="dialog" class="sheet-inner chat" id="sheet-form">
       <div class="chat-head">
@@ -71,6 +76,7 @@
     </form>
   </dialog>
 
+  <!-- Deny sheet: pick quick reasons and/or type one; the text is sent back to the agent. -->
   <dialog id="deny-sheet" class="sheet">
     <form method="dialog" class="sheet-inner">
       <strong class="sheet-q">Why deny?</strong>
@@ -88,6 +94,7 @@
     </form>
   </dialog>
 
+  <!-- Redirect sheet: tell the agent what to do instead of the requested action. -->
   <dialog id="redo-sheet" class="sheet">
     <form method="dialog" class="sheet-inner">
       <strong class="sheet-q">Tell it what to do instead</strong>
@@ -110,6 +117,7 @@
     </form>
   </dialog>
 
+  <!-- Shows the full command or file change for the current ask. -->
   <dialog id="diff-sheet" class="sheet">
     <form method="dialog" class="sheet-inner">
       <strong class="sheet-q">The change</strong>
@@ -118,8 +126,10 @@
     </form>
   </dialog>
 
+  <!-- Transient status messages (see toast() in app.js). -->
   <div id="toast" class="toast" role="status"></div>
 
+  <!-- All behaviour lives in ES modules loaded from app.js; there is no build step. -->
   <script type="module" src="app.js"></script>
 </body>
 </html>

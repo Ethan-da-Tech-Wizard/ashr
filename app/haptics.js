@@ -1,6 +1,8 @@
 // Web Audio + Vibration haptic feedback for iOS Safari and Android. Zero dependencies.
+// Lazily created audio context; browsers only allow audio after a user gesture.
 let ctx = null;
 
+// Return the shared AudioContext, or null where unsupported (including non-browser test runs).
 function getAudio() {
   if (ctx) return ctx;
   const AudioCtx = typeof window !== "undefined" ? (window.AudioContext || window.webkitAudioContext) : null;
@@ -21,6 +23,7 @@ export function initHaptics() {
   }
 }
 
+// Vibrate if supported (Android; iOS Safari ignores it). Errors are ignored: haptics are optional.
 export function vibrate(pattern = 15) {
   if (typeof navigator !== "undefined" && navigator.vibrate) {
     try { navigator.vibrate(pattern); } catch {}
@@ -31,6 +34,7 @@ export function vibrate(pattern = 15) {
 export function hapticAllow() {
   vibrate(15);
   const c = getAudio();
+  // Audio is skipped unless already unlocked by a user gesture.
   if (!c || c.state !== "running") return;
   try {
     const osc = c.createOscillator();

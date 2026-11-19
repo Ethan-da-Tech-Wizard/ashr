@@ -3,6 +3,7 @@
 // unbothered for redirect. Pure string builders, no DOM, so node can test them.
 import { characterParts } from "./character.js";
 
+// Per-outcome tile gradient (top/bottom colour), caption, face mood and optional thumb.
 const LOOK = {
   allow: { top: "#b9ff52", bottom: "#2fb50e", word: "allowed", mood: "happy", hand: "up" },
   deny: { top: "#ff7a66", bottom: "#e0201f", word: "denied", mood: "cross", hand: "down" },
@@ -11,6 +12,7 @@ const LOOK = {
 
 export const faceWord = (kind) => (LOOK[kind] || LOOK.neutral).word;
 
+// Tile with the owner's character inside. Unknown kinds render as "neutral" (redirected).
 export function faceSvg(kind, style = "rays") {
   const k = LOOK[kind] ? kind : "neutral";
   const c = LOOK[k];

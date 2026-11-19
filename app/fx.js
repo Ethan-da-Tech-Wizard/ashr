@@ -3,11 +3,13 @@
 // Redirect = a neutral face, then the card lifts away.
 import { faceSvg, faceWord } from "./faces.js";
 
+// Honour the OS "reduce motion" setting: the effects below then just fade the card.
 const reduced = () =>
   typeof window !== "undefined" && window.matchMedia
     ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
     : false;
 
+// Overlay the outcome face and caption on the card.
 function stamp(card, kind) {
   const mark = document.createElement("div");
   mark.className = `seal-mark ${kind}`;
@@ -15,10 +17,12 @@ function stamp(card, kind) {
   card.appendChild(mark);
 }
 
+// Remove the card after its animation (duration in ms must match the CSS), resolving when done.
 function finish(card, ms) {
   return new Promise((resolve) => setTimeout(() => { card.remove(); resolve(); }, ms));
 }
 
+// Random sparks for the burn effect; CSS custom property --drift gives each a sideways wobble.
 function embers(card, count = 14) {
   const box = document.createElement("div");
   box.className = "embers";
@@ -33,6 +37,7 @@ function embers(card, count = 14) {
   card.appendChild(box);
 }
 
+// Allow effect: mark the card as leaving (so other code leaves it alone), stamp, glide away (~1 s).
 export function seal(card) {
   card.dataset.leaving = "1";
   card.style.pointerEvents = "none";
@@ -44,6 +49,7 @@ export function seal(card) {
   return finish(card, 1000);
 }
 
+// Deny effect: stamp, slash, embers, burn (~1.55 s) and a short vibration where supported.
 export function burn(card) {
   card.dataset.leaving = "1";
   card.style.pointerEvents = "none";
@@ -60,6 +66,7 @@ export function burn(card) {
   return finish(card, 1550);
 }
 
+// Redirect effect: neutral face, then the card lifts away (~1.15 s).
 export function shrug(card) {
   card.dataset.leaving = "1";
   card.style.pointerEvents = "none";

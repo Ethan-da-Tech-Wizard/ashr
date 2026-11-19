@@ -1,12 +1,15 @@
 // Turns an agent's request into plain English: one sentence, then up to three short points.
 // Pure functions, no DOM, so node can test them. explain(ask, agentName) -> { headline, points }
 
+// Words that suggest a credentials file; only affects the wording shown, not the risk score (the hub's guard decides that).
 const SECRET = /(^|\/)\.env(\.|$)|\.pem$|\.key$|id_rsa|credentials|secrets?\b/i;
 const short = (s, n = 48) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const words = (cmd) => cmd.trim().split(/\s+/);
+// Positional arguments of a split command (flags removed).
 const args = (w, from = 1) => w.slice(from).filter((x) => !x.startsWith("-"));
 const list = (items) => short(items.join(", ")) || "some files";
 
+// Order matters: more specific rules (reading a secrets file) precede general ones (reading any file).
 // Each rule: [test on the word list, sentence builder]. First match wins.
 const BASH = [
   [(w) => /^(cat|less|more|head|tail|bat)$/.test(w[0]) && args(w).some((f) => SECRET.test(f)),
@@ -39,6 +42,7 @@ const BASH = [
   [(w) => /^(ls|pwd|find|grep|rg|wc|which|echo)$/.test(w[0]), () => "Look around the project. Nothing changes."],
 ];
 
+// Describe one simple command. Output redirections are removed first so "echo x > f" is judged by its command word.
 function bashPart(cmd) {
   const c = String(cmd ?? "");
   const w = words(c.replace(/\s+\d?>+\s*\S+/g, ""));
@@ -46,6 +50,7 @@ function bashPart(cmd) {
   return rule ? rule[1](w) : `Run "${short(c, 36)}" in the terminal.`;
 }
 
+// Describe a chain (&&, ||, ;) as "A, then b, then c", using at most three steps and only the first sentence of each.
 function bash(cmd) {
   const c = String(cmd ?? "");
   const parts = c.split(/\s*(?:&&|\|\||;)\s*/).filter(Boolean);
@@ -55,6 +60,7 @@ function bash(cmd) {
   return `${steps[0]}, then ${steps.slice(1).map(lower).join(", then ")}.`;
 }
 
+// One-sentence summary by tool type; Bash is delegated to the command rules above.
 function headline(ask) {
   const tool = ask?.tool || "";
   const target = String(ask?.summary || "").replace(/^\w+\s+/, "");
@@ -66,12 +72,14 @@ function headline(ask) {
   return `Use the ${tool || "unknown"} tool.`;
 }
 
+// Generic risk sentence per level.
 const WORST = {
   high: "This could leak secrets or lose work.",
   medium: "Not dangerous by itself, but worth a look.",
   low: "This is usually safe.",
 };
 
+// Return { headline, points } for an ask. Safe with null or malformed input.
 export function explain(ask, agentName = "The agent") {
   const agent = agentName || "The agent";
   if (!ask || typeof ask !== "object") {

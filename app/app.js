@@ -1,3 +1,7 @@
+// File: app/app.js
+// Purpose: Main controller of the phone UI. Holds the latest hub state, renders
+// the card stack of pending approvals, the agent "herd", the activity log and the
+// header counts, and wires swipes, buttons and keyboard shortcuts to decisions.
 // ashr phone app: render state, handle swipes, talk to agents.
 import { subscribe, decide, say, kill, isDemo, authState, onUnpaired } from "./api.js";
 import { makeSwipeable } from "./swipe.js";
@@ -12,12 +16,17 @@ import { initDecideSheets, initAgentSheet } from "./sheets.js";
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+// Human wording for each session state.
 const STATE_WORD = { needs_you: "needs you", working: "working", done: "done", failed: "failed", signed_out: "signed out", idle: "idle" };
+// Sort priority for the agent row: things needing attention come first.
 const ORDER = { needs_you: 0, signed_out: 1, failed: 2, working: 3, done: 4, idle: 5 };
 
+// Latest snapshot from the hub (replaced wholesale on every update).
 let state = { sessions: [], asks: [], log: [] };
+// Ask ids already shown, used to buzz only for genuinely new requests.
 let seenAsks = new Set();
 
+// Compact elapsed time such as "45s", "3m", "2h".
 function ago(ms) {
   const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
   if (s < 60) return `${s}s`;
@@ -25,10 +34,12 @@ function ago(ms) {
   return `${Math.round(s / 3600)}h`;
 }
 
+// Local time of day without the AM/PM suffix, for the log column.
 function clock(ms) {
   return new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).replace(/\s?[AP]M/i, "");
 }
 
+// Show a short status message; restarting the timer keeps rapid messages readable.
 function toast(text) {
   const t = $("toast");
   t.textContent = text;
@@ -37,16 +48,20 @@ function toast(text) {
   toast.timer = setTimeout(() => t.classList.remove("show"), 1800);
 }
 
+// Escape then colour a diff-like detail text: "+" lines green, "-" lines red. Escaping first prevents injected markup.
 function diffHtml(detail) {
   return esc(detail).split("\n").map((l) =>
     l.startsWith("+") ? `<span class="add">${l}</span>` : l.startsWith("-") ? `<span class="del">${l}</span>` : l
   ).join("\n");
 }
 
+// Session an ask belongs to, with a placeholder if it has not arrived yet.
 function sessionOf(ask) {
   return state.sessions.find((x) => x.id === ask.sessionId) || { agent: "claude", title: ask.sessionId };
 }
 
+// Send allow/deny for an ask, then play the matching effect. `fly` and `reset` come from the swipe code
+// (reset snaps the card back on failure); `redirect` means "deny but suggest another way".
 async function sendDecision(ask, behavior, message, fly, reset, redirect = false) {
   // Hold the card while the reply is in flight, so a state refresh can't fade it out
   // before the fire effect plays.
@@ -62,9 +77,11 @@ async function sendDecision(ask, behavior, message, fly, reset, redirect = false
     toast(redirect ? "sent. the agent will try it your way" : behavior === "allow" ? "allowed. agent is moving" : "denied. agent was told why");
   } catch (err) {
     if (card) delete card.dataset.pending;
+    // 410 = the hub already expired or answered it; drop the stale card instead of showing an error.
     if (err.status === 410) {
       dropCard(ask.id, true);
       toast("that request already timed out");
+    // 401 is handled globally by showing the "not paired" screen, so no extra toast.
     } else if (err.status !== 401) {
       reset && reset();
       toast(`could not reach the laptop: ${err.message}`);
@@ -74,8 +91,10 @@ async function sendDecision(ask, behavior, message, fly, reset, redirect = false
 
 const { askDeny, askRedo } = initDecideSheets({ onDecision: sendDecision, onToast: toast });
 
+// ask id -> card element. Cards are reused across renders so gestures and open diffs are not interrupted.
 const cards = new Map();
 
+// Fade out and remove a card whose ask has gone away, unless a decision is mid-flight (that path plays its own effect).
 function dropCard(id, force = false) {
   const card = cards.get(id);
   if (!card) return;
@@ -87,6 +106,7 @@ function dropCard(id, force = false) {
   setTimeout(() => card.remove(), 300);
 }
 
+// Create the DOM card for an ask and attach swipe, AI explain and "see more" behaviour.
 function buildCard(ask) {
   const card = document.createElement("article");
   const s = sessionOf(ask);
@@ -94,6 +114,7 @@ function buildCard(ask) {
   card.dataset.style = styleFor(s.owner);
   card.innerHTML = cardHtml(ask, s, ago(ask.createdAt));
   wireCard(card);
+  // One entry point used by swipes and buttons: redo and deny open a sheet to collect a message; allow sends immediately.
   card.decideWith = (behavior, fly, reset) =>
     behavior === "redo" ? askRedo(ask)
       : behavior === "deny" ? askDeny(ask, fly, reset) : sendDecision(ask, "allow", undefined, fly, reset);
@@ -116,10 +137,12 @@ $("btn-redo").onclick = () => { const c = topCard(); if (c && !c.dataset.pending
 // Keep existing card elements so a swipe in progress and an open diff survive each frame.
 function renderStack() {
   const stack = $("stack");
+  // High-risk asks first, then oldest first.
   const asks = [...state.asks].sort((a, b) => (b.risk === "high") - (a.risk === "high") || a.createdAt - b.createdAt);
   const ids = new Set(asks.map((a) => a.id));
   for (const id of [...cards.keys()]) if (!ids.has(id)) dropCard(id);
   if (!stack.querySelector(".card") && stack.childNodes.length) stack.textContent = "";
+  // Walk the existing DOM in step with the sorted list and only insert/move cards that are out of place.
   let ref = stack.firstElementChild;
   const skipGone = () => { while (ref && ![...cards.values()].includes(ref)) ref = ref.nextElementSibling; };
   for (const ask of asks) {
@@ -135,6 +158,7 @@ function renderStack() {
     if (ref === card) ref = ref.nextElementSibling;
     else stack.insertBefore(card, ref);
   }
+  // Depth drives the stacked look; cards past the third share the deepest style.
   let depth = 0;
   for (const ask of asks) {
     const card = cards.get(ask.id);
@@ -144,6 +168,7 @@ function renderStack() {
   $("decide").classList.toggle("hidden", asks.length === 0);
 }
 
+// Update the big count of pending approvals, the subtitle and the tab title.
 function renderHero() {
   const n = state.asks.length;
   const working = state.sessions.filter((s) => s.state === "working").length;
@@ -176,6 +201,7 @@ function renderHerd() {
   wireFaces(herd);
 }
 
+// Show the 12 most recent decisions.
 function renderLog() {
   const log = $("log");
   const entries = (state.log || []).slice(0, 12);
@@ -190,6 +216,7 @@ function renderLog() {
   }
 }
 
+// Full UI refresh from `state`. Vibrates only when a new ask appears after the first snapshot.
 function render() {
   const fresh = state.asks.filter((a) => !seenAsks.has(a.id));
   if (fresh.length && seenAsks.size) hapticAlert();
@@ -208,6 +235,7 @@ const { openSheet } = initAgentSheet({
   stateWord: STATE_WORD,
 });
 
+// Full-screen notice when this device has no valid token.
 function showUnpaired(failed) {
   if (document.querySelector(".unpaired")) return;
   const el = document.createElement("div");
@@ -221,6 +249,7 @@ function showUnpaired(failed) {
 attachVoice($("mic"), $("say-text"));
 attachVoice($("redo-mic"), $("redo-text"));
 onUnpaired(() => showUnpaired(false));
+// Only connect when we have a token (or demo data).
 if (authState === "unpaired" || authState === "pairfailed") {
   showUnpaired(authState === "pairfailed");
 } else {
@@ -232,6 +261,7 @@ if (authState === "unpaired" || authState === "pairfailed") {
 }
 // Desktop keyboard shortcuts: Right arrow or 'A' to allow top card, Left arrow or 'D' to deny
 window.addEventListener("keydown", (e) => {
+  // Ignore shortcuts while typing or when a modifier is held (browser shortcuts).
   if (e.target.matches("input, textarea, select") || e.metaKey || e.ctrlKey || e.altKey) return;
   if (!topCard() || document.querySelector("dialog[open]")) return;
   const key = e.key.toLowerCase();

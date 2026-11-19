@@ -1,6 +1,10 @@
+// File: app/mock.js
 // Demo data so the app works with no hub (screenshots, judges' phones, backup demo).
+// Indirection so timestamps stay in one place.
 const now = () => Date.now();
 
+// Fresh demo state: five agents (two waiting on approval), two pending asks and a short log.
+// Times are relative to now so ages look realistic. Used only with ?demo=1.
 function seed() {
   const t = now();
   return {
@@ -31,15 +35,18 @@ function seed() {
   };
 }
 
+// In-browser stand-in for the hub: same post() and subscribe() shape as api.js, no network.
 export function createDemo() {
   let state = seed();
   const subs = new Set();
+  // Send each subscriber its own deep copy so UI code cannot mutate the demo's state.
   const emit = () => subs.forEach((fn) => fn(structuredClone(state)));
 
   const setSession = (id, patch) => {
     state.sessions = state.sessions.map((s) => (s.id === id ? { ...s, ...patch, updatedAt: now() } : s));
   };
 
+  // Imitate hub endpoints: decide removes the ask and later marks the agent done; say retitles; kill idles; explain returns a canned answer.
   const post = async (path, body) => {
     if (path === "/api/decide") {
       const ask = state.asks.find((a) => a.id === body.askId);

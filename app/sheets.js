@@ -1,12 +1,19 @@
+// File: app/sheets.js
+// Purpose: Controllers for the modal sheets (<dialog>) in index.html: the deny-reason
+// sheet, the "do this instead" redirect sheet, and the agent detail/talk sheet.
 // Dialog sheets for agent details, deny reasons and redirection instructions.
 import { tileHtml, ownerName } from "./agents.js";
 
 const $ = (id) => document.getElementById(id);
 
+// Wire the deny and redirect sheets. `onDecision` is app.js's sendDecision.
+// Returns { askDeny, askRedo }, the functions that open each sheet for an ask.
 export function initDecideSheets({ onDecision, onToast }) {
+  // State for the sheet currently open (the ask plus the swipe callbacks), or null.
   let pendingDeny = null;
   let pendingRedo = null;
 
+  // Open the deny sheet. `reset` snaps a swiped card back if the user cancels.
   function askDeny(ask, fly, reset) {
     pendingDeny = { ask, fly, reset };
     $("deny-text").value = "";
@@ -14,6 +21,7 @@ export function initDecideSheets({ onDecision, onToast }) {
     $("deny-sheet").showModal();
   }
 
+  // Open the redirect sheet for an ask.
   function askRedo(ask) {
     pendingRedo = ask;
     $("redo-text").value = "";
@@ -25,12 +33,14 @@ export function initDecideSheets({ onDecision, onToast }) {
     chip.onclick = () => { chip.classList.toggle("on"); };
   });
 
+  // Cancel puts the swiped card back where it was.
   $("deny-cancel").onclick = () => {
     $("deny-sheet").close();
     pendingDeny?.reset?.();
     pendingDeny = null;
   };
 
+  // Message = selected quick-reply chips plus typed text, joined with ". "; falls back to a generic message.
   $("deny-send").onclick = () => {
     if (!pendingDeny) return;
     const chips = [...document.querySelectorAll("#deny-chips .chip.on")].map((c) => c.textContent);
@@ -51,6 +61,7 @@ export function initDecideSheets({ onDecision, onToast }) {
     pendingRedo = null;
   };
 
+  // A redirect needs an instruction. It is sent as a deny whose message tells the agent to do something else (redirect = true plays the neutral effect).
   $("redo-send").onclick = () => {
     if (!pendingRedo) return;
     const chips = [...document.querySelectorAll("#redo-chips .chip.on")].map((c) => c.textContent);
@@ -65,6 +76,8 @@ export function initDecideSheets({ onDecision, onToast }) {
   return { askDeny, askRedo };
 }
 
+// Wire the agent sheet: shows details, lets the user type to the agent (tmux) or stop it.
+// Returns { openSheet(session) }.
 export function initAgentSheet({ onSay, onKill, onToast, wireFaces, stateWord = {} }) {
   let openSession = null;
 

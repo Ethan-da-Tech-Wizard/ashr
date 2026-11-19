@@ -3,8 +3,10 @@
 // belongs to a person: all of one owner's agents wear the same one. Colour says which agent.
 // Pure string builders, no DOM, so node can test them.
 
+// Shared colours; everything is drawn on a 64x64 grid so characters scale cleanly.
 const INK = "#15171a";
 const W = "#fff";
+// SVG path helper with round caps/joins, used for lines and mouths.
 const stroke = (d, w, color = INK) => `<path d="${d}" stroke="${color}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`;
 
 // The head shapes. Order matters: styleFor() picks by position.
@@ -21,7 +23,9 @@ export const STYLES = Object.keys(TOPS);
 const BODY = `<ellipse cx="32" cy="40" rx="18" ry="15.5" fill="${W}"/>
   <path d="M15.6 46a18 15.5 0 0 0 32.8 0a19 12 0 0 1-32.8 0z" fill="#dde4ec"/>`;
 const eyes = (y) => `<ellipse cx="26" cy="${y}" rx="2.5" ry="3.9" fill="${INK}"/><ellipse cx="38" cy="${y}" rx="2.5" ry="3.9" fill="${INK}"/>`;
+// Four-point sparkle shown only on the calm moods (idle, happy).
 const SPARK = `<path d="M53 8c.7 3 2.3 4.6 5.3 5.3-3 .7-4.6 2.3-5.3 5.3-.7-3-2.3-4.6-5.3-5.3 3-.7 4.6-2.3 5.3-5.3z" fill="${W}"/>`;
+// Thumb gesture; the down thumb is the up thumb mirrored vertically.
 const thumb = (up) => `<g class="thumb ${up ? "up" : "down"}" transform="translate(56 ${up ? 43 : 38}) scale(1 ${up ? 1 : -1})">
     <rect x="-2.6" y="-11.5" width="5.2" height="10.5" rx="2.6" fill="${W}"/><rect x="-4.8" y="-4" width="10" height="9.4" rx="3.8" fill="${W}"/></g>`;
 
@@ -34,6 +38,7 @@ const MOODS = {
 };
 
 // Stable pick of a head shape from a GitHub name. Same name, same shape, on every phone.
+// Simple string hash (31x + char, mod 9973) so the choice is deterministic across devices and sessions.
 export function styleFor(owner) {
   const name = String(owner || "").toLowerCase();
   let h = 7;
@@ -42,12 +47,14 @@ export function styleFor(owner) {
 }
 
 // The character alone, on the 64 grid. hand: "up" | "down" | undefined.
+// Unknown style or mood falls back to defaults so bad input still renders. With a hand, the figure shifts left to make room for it.
 export function characterParts(style, mood = "idle", hand) {
   const figure = `${TOPS[style] || TOPS.rays}${BODY}${MOODS[mood] || MOODS.idle}`;
   const placed = hand ? `<g transform="translate(-5 0)">${figure}</g>${thumb(hand === "up")}` : figure;
   return `${placed}${mood === "idle" || mood === "happy" ? SPARK : ""}`;
 }
 
+// Wrap the parts in a standalone <svg>; aria-hidden because it is decoration.
 export function characterSvg(style, mood = "idle", hand, cls = "mark") {
   return `<svg class="${cls}" viewBox="0 0 64 64" aria-hidden="true">${characterParts(style, mood, hand)}</svg>`;
 }

@@ -6,10 +6,13 @@ import { aiExplainBarHtml } from "./ai-explain-ui.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+// Return the inner HTML of an approval card. `waited` is the pre-formatted wait time.
+// Tolerates missing ask/session so a malformed update never throws.
 export function cardHtml(ask, session, waited) {
   const a = ask && typeof ask === "object" ? ask : null;
   const s = session && typeof session === "object" ? session : {};
   const hasDiff = Boolean(a?.detail && a?.detail !== a?.summary);
+  // Plain-English summary is generated locally (explain.js); nothing is sent anywhere.
   const { headline, points } = explain(a, s.agent);
   const by = ownerName(s.owner);
   const risk = a?.risk || "medium";

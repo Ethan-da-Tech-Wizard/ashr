@@ -3,6 +3,9 @@ import { hapticAllow, hapticDeny, initHaptics } from "./haptics.js";
 
 const THRESHOLD = 90; // pixels a card must travel sideways to count as a decision
 
+// Add drag-to-decide to a card using pointer events (one code path for touch and mouse).
+// Dragging right past THRESHOLD allows, left denies; shorter drags snap back.
+// onDecide(behavior, fly, reset): `fly` animates the card off screen, `reset` returns it.
 export function makeSwipeable(card, onDecide) {
   if (!card) return;
   let startX = 0;
@@ -13,6 +16,7 @@ export function makeSwipeable(card, onDecide) {
   const stampAllow = card.querySelector(".stamp.allow");
   const stampDeny = card.querySelector(".stamp.deny");
 
+  // Apply the current drag: tilt/translate the card and fade in the matching ALLOW/DENY stamp in proportion to progress (0..1).
   const paint = () => {
     const p = Math.min(Math.abs(dx) / THRESHOLD, 1);
     card.style.transform = dx ? `translateX(${dx}px) rotate(${dx / 28}deg)` : "";
@@ -34,12 +38,14 @@ export function makeSwipeable(card, onDecide) {
     paint();
   };
 
+  // Taps on buttons, summaries and code blocks must not start a drag.
   card.addEventListener("pointerdown", (e) => {
     if (e.target.closest("button, summary, pre")) return;
     initHaptics();
     active = true;
     startX = e.clientX;
     card.classList.add("dragging");
+    // Keep receiving moves even if the finger leaves the card.
     card.setPointerCapture(e.pointerId);
   });
 
