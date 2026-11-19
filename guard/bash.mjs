@@ -6,6 +6,23 @@
 // is at least MEDIUM, so a human on the phone gets to decide.
 // Bash command scoring. Unmatched commands are MEDIUM. LOW comes only from the allowlist below.
 // Compound commands score as the max of their parts.
+//
+// How it fits: guard/rules.mjs calls scoreBash() for every Bash tool call and passes in a shared
+//   `tracker` (risk + reasons). lex.mjs does the shell tokenising; secrets.mjs supplies the secret
+//   scan labels (`found`). The result decides whether the phone is asked at all.
+//
+// Scoring pipeline: (1) whole-command regexes that span pipes (curl | sh); (2) lex into segments
+//   split at ; | & and substitutions; (3) per segment: sensitive-path check, HIGH and MEDIUM
+//   regexes, special cases (rm, find, git clean, nested shells, env dumps), write-target check;
+//   (4) LOW only if the segment passes allowLow(); (5) $(...) and backtick bodies are scored
+//   recursively (depth limit 3); (6) secret-scan labels become HIGH reasons.
+//
+// Why an allowlist: it is much easier to enumerate the few commands that are provably harmless
+//   (ls, cat of a project file, test runners, git status) than the endless harmful ones.
+//
+// Known limits: pattern based, so exotic obfuscation could be mis-scored (test/fuzz.test.mjs
+//   hunts for those); only the first three nesting levels of sh -c / eval are examined.
+// Test: test/guard.test.mjs, test/guard-secrets.test.mjs, test/fuzz.test.mjs.
 import path from 'node:path';
 import { lex, embeddedCommands } from './lex.mjs';
 
@@ -14,11 +31,14 @@ import { lex, embeddedCommands } from './lex.mjs';
 // match after '/', '@', ':' or at the start, so "scp host:.env" and "@.env" are caught too.
 export const SENSITIVE_PATH = /(^|[/@:])(\.env(\.[\w.-]+)?|id_(rsa|ed25519|ecdsa)|[\w.-]+\.(pem|key|p12|pfx)|\.ssh|\.aws|\.kube|\.npmrc|\.netrc|\.git-credentials|credentials|\.(bash|zsh)_history)(\/|$)/;
 // Literal names used to test whether a glob (e.g. ".en?" or "id_*") could expand to a sensitive file.
+// Candidate file names a glob is expanded against (see touchesSensitive). The `leakguard:allow` marker at
+// the end of the line tells the leakguard secret scanner that these literals are not real secrets.
 const SENSITIVE_NAMES = ['.env', '.env.local', '.env.production', 'id_rsa', 'id_ed25519', 'id_ecdsa', '.npmrc', '.netrc', '.git-credentials', 'credentials', '.ssh', '.aws', '.kube', '.zsh_history', '.bash_history']; // leakguard:allow
 // /proc/<pid>/environ exposes a process's environment variables (often secrets).
 const PROC_ENV = /\/proc\/[^/]+\/environ/;
 // Harmless write targets: redirecting to these never touches a real file.
 const NULLISH = /^\/dev\/(null|stdout|stderr|tty|fd\/\d+)$/;
+// Characters that make a word a shell glob (expanded by the shell at run time).
 const GLOB_CHARS = /[?*[\]]/;
 // Commands that merely run another command; the real command is the word after them.
 const WRAPPERS = new Set(['command', 'exec', 'nohup', 'time', 'nice', 'builtin', 'xargs', 'env']);
@@ -63,9 +83,15 @@ const MEDIUM = [
   [/\bgit\s+(rebase|merge)\b/, 'rewrites git state'],
 ];
 
+/** @param {string} s - path-like word. @returns {string} last path component (so /usr/bin/rm and rm compare equal). */
 const base = (s) => path.basename(String(s));
 
 // True when absolute path `abs` is the project directory or below it. With no cwd, nothing can be judged, so it is treated as inside.
+/**
+ * @param {string} abs - absolute path.
+ * @param {string} cwd - project directory ('' = unknown).
+ * @returns {boolean} true if abs is cwd or below it.
+ */
 function inside(abs, cwd) {
   if (!cwd) return true;
   const rel = path.relative(path.resolve(cwd), abs);
@@ -73,12 +99,22 @@ function inside(abs, cwd) {
 }
 
 // Convert a shell glob to a RegExp (escaping regex metacharacters first); null if it does not compile.
+/**
+ * @param {string} g - glob pattern (only the final path component is passed in).
+ * @returns {RegExp|null} anchored regex equivalent for * ? and [..] globs; null if invalid.
+ *   `[!x]` negation is translated to `[^x]`.
+ */
 function globRe(g) {
   const s = g.replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]').replace(/\[!/g, '[^');
   try { return new RegExp(`^${s}$`); } catch { return null; }
 }
 
 // True when the word is, or could expand to, an env file or key file.
+/**
+ * @param {string} val - one shell word or redirect target.
+ * @returns {boolean} true if it names, or a glob could expand to, a credential file such as .env,
+ *   an SSH key, or /proc/<pid>/environ. Also exported for rules.mjs (Read/Grep patterns).
+ */
 export function touchesSensitive(val) {
   if (!val) return false;
   const raw = String(val).replace(/^@+/, '');
@@ -94,10 +130,17 @@ export function touchesSensitive(val) {
   return false;
 }
 
+/** @param {{val: string}} w - lexed word. @returns {boolean} true for `-x` / `--long` options (a lone `-` is not a flag). */
 const isFlag = (w) => w.val.startsWith('-') && w.val.length > 1;
 
 // Strip leading VAR=value assignments and wrapper commands (env, nohup, ...) to find the real command.
 // Returns { rest, wrapped, envDump }; envDump is true for a bare `env`, which prints every variable.
+/**
+ * @param {Array<{val: string}>} words - words of one segment.
+ * @returns {{rest: Array, wrapped: boolean, envDump: boolean}} the words from the real command on,
+ *   whether wrappers were skipped (wrapped commands can never be LOW), and whether a bare `env`
+ *   (which prints the whole environment) was seen.
+ */
 function skipPrefix(words) {
   let i = 0; let wrapped = false; let envDump = false;
   for (;;) {
@@ -115,6 +158,12 @@ function skipPrefix(words) {
 
 // Reason string if writing to this path is risky, else null. Paths built from variables or
 // substitutions cannot be resolved, so they count as risky; "~" and anything outside cwd too.
+/**
+ * @param {string} val - path being written.
+ * @param {boolean} dynamic - true if it contains an expansion.
+ * @param {string} cwd - project directory.
+ * @returns {string|null} reason text, or null when the write is harmless.
+ */
 function writeTargetRisk(val, dynamic, cwd) {
   if (NULLISH.test(val)) return null;
   if (dynamic) return 'unresolvable write path';
@@ -124,8 +173,17 @@ function writeTargetRisk(val, dynamic, cwd) {
 
 // The allowlist: true only for known read-only or test-running commands with fully literal
 // arguments. Everything else returns false and ends up MEDIUM.
+/**
+ * @param {string} name - command name (basename).
+ * @param {Array<{val: string, dynamic: boolean}>} args - arguments after the command name.
+ * @param {string} cwd - project directory.
+ * @returns {boolean} true only for the allowlisted read-only/test commands: pwd, ls, cat/head/tail/
+ *   wc/grep/rg on plain in-project non-sensitive paths, npm/pnpm/yarn/bun test, node --test, pytest,
+ *   `go|cargo test`, and read-only git subcommands.
+ */
 function allowLow(name, args, cwd) {
   if (args.some((a) => a.dynamic)) return false;
+  // `plain`: a literal, in-project, non-credential path. Anything fancier (globs, ~, $VAR) fails.
   const plain = (a) => PLAIN.test(a.val) && !touchesSensitive(a.val) && inside(path.resolve(cwd || '/', a.val), cwd);
   const nonFlags = args.filter((a) => !isFlag(a));
   const first = args[0]?.val;
@@ -154,8 +212,17 @@ function allowLow(name, args, cwd) {
 
 // Score one command segment (between ; | & etc.), recording findings on tracker `t`.
 // Returns true only if the segment is provably LOW risk. `depth` bounds recursion into nested shells.
+/**
+ * @param {{words: Array, redirects: Array}} seg - one lexed command.
+ * @param {string} cwd - project directory.
+ * @param {object} t - tracker receiving reasons (risk only ever rises).
+ * @param {number} depth - nested-shell depth, 0 at top level.
+ * @returns {boolean} true if this segment is provably LOW.
+ */
 function scoreSegment(seg, cwd, t, depth) {
   const { rest, wrapped, envDump } = skipPrefix(seg.words);
+  // `all` includes redirect targets so `echo x > .env` is caught like `cat .env`; `text` is the
+  // flattened segment the regex tables run against.
   const all = [...seg.words, ...seg.redirects];
   const text = all.map((w) => w.val).join(' ');
   // Check every word AND every redirect target for credential files.
@@ -210,6 +277,13 @@ function scoreSegment(seg, cwd, t, depth) {
 
 // Score a command string: whole-text patterns, then each lexed segment, then any $(...)/backtick
 // bodies hidden inside quotes. Returns true if every part was LOW.
+/**
+ * @param {string} cmd - command text (top level or an embedded/nested one).
+ * @param {string} cwd - project directory.
+ * @param {object} t - tracker.
+ * @param {number} [depth=0] - recursion depth; scoring stops descending at 3.
+ * @returns {boolean} true if every part (segments and substitutions) was LOW.
+ */
 function scoreText(cmd, cwd, t, depth = 0) {
   for (const [re, why] of WHOLE_COMMAND_HIGH) if (re.test(cmd)) t.bump('high', why);
   const { segments, error } = lex(cmd);
@@ -225,6 +299,14 @@ function scoreText(cmd, cwd, t, depth = 0) {
 }
 
 // found: secret scan labels computed by the caller (sync or async).
+/**
+ * @param {string} cmd - the Bash tool's command text (coerced to string).
+ * @param {string} cwd - project directory ('' if unknown).
+ * @param {string[]} [found] - labels from the secret scan.
+ * @param {{risk: string, reasons: string[], bump: Function}} [t] - tracker to fill in; rules.mjs
+ *   always provides one. Results are returned through `t`, not a return value.
+ * @returns {void}
+ */
 export function scoreBash(cmd, cwd, found = [], t) {
   cmd = typeof cmd === 'string' ? cmd : String(cmd ?? '');
   cwd = typeof cwd === 'string' ? cwd : '';

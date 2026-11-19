@@ -1,13 +1,38 @@
 // Quote-aware shell lexer for the guard. Splits a command into segments of words and redirects.
 // It never runs anything. Over-approximates: any doubt becomes a flag the scorer treats as risky.
+//
+// How it fits: guard/bash.mjs calls lex() to turn the raw command text into structured pieces it
+//   can inspect (which program, which arguments, which files are redirected to) instead of using
+//   regexes on one big string, which attackers can sidestep with quoting, e.g. `c'a't .env`.
+//   embeddedCommands() finds $(...) and backtick bodies that run even inside double quotes.
+// Why hand-written: a real shell parser is huge; this handles the constructs that matter for
+//   risk (quotes, escapes, operators, redirects, substitutions, comments) and flags the rest.
+// Known limits: no here-doc bodies, arithmetic, brace expansion or nested substitutions; these
+//   either end up as 'dynamic' words or are only caught approximately, which makes the scorer
+//   stricter, not looser. Test: test/guard.test.mjs and test/fuzz.test.mjs (random command fuzzing).
 
 // Characters that end a command segment.
+/**
+ * @param {string} c - single character.
+ * @returns {boolean} true for `; | & ( ) ` ` and newline. Note '&' is included so `a & b` and
+ *   `a && b` both split (the redirect forms `&>` and `>&` are handled before this is reached).
+ */
 const isOp = (c) => c === ';' || c === '|' || c === '&' || c === '(' || c === ')' || c === '`' || c === '\n';
 
 // Returns { segments: [{ words: [{val, dynamic, quoted}], redirects: [{kind, val, dynamic}] }], error }.
+/**
+ * @param {string} cmd - shell command text (non-strings are coerced).
+ * @returns {{segments: Array<{words: Array<{val: string, dynamic: boolean, quoted: boolean}>,
+ *   redirects: Array<{kind: 'write'|'read', val: string, dynamic: boolean}>}>, error: boolean}}
+ *   `dynamic` = the word contains a $expansion or backtick the shell would evaluate; `quoted` =
+ *   any part was quoted or escaped (so it is not a bare number or flag). `error` = unbalanced
+ *   quote, in which case parsing stops and the scorer refuses to call the command LOW.
+ */
 export function lex(cmd) {
   cmd = typeof cmd === 'string' ? cmd : String(cmd ?? '');
   const segments = [];
+  // Parser state: `seg` is the command being built, `tok` the word being built, `pending` a
+  // redirect operator that still needs its target word.
   let seg = { words: [], redirects: [] };
   let tok = null; // { val, dynamic, quoted }
   let pending = null; // redirect kind waiting for its target word
@@ -40,6 +65,7 @@ export function lex(cmd) {
   for (let i = 0; i < cmd.length; i++) {
     const c = cmd[i];
     const n = cmd[i + 1];
+    // Whitespace ends the current word (the loop is deliberately a state machine, one char per step).
     if (c === ' ' || c === '\t' || c === '\r') { pushTok(); continue; }
     // A '#' at the start of a word begins a comment to end of line.
     if (c === '#' && !tok) { while (i < cmd.length && cmd[i] !== '\n') i++; i--; continue; }
@@ -96,7 +122,10 @@ export function lex(cmd) {
     if (c === '&' && n === '>') {
       pushTok(); i += cmd[i + 2] === '>' ? 2 : 1; pending = 'write'; continue;
     }
+    // Any other operator character ends the word and the command (so `a; b | c` is 3 commands,
+    // each scored on its own).
     if (isOp(c)) { pushTok(); endSeg(); continue; }
+    // Ordinary character: part of the current word.
     add(c);
   }
   pushTok(); endSeg();
@@ -105,6 +134,11 @@ export function lex(cmd) {
 
 // Backtick and $(...) bodies sitting inside double quotes still run. Return their text.
 // Regex extraction is a deliberate over-approximation: it ignores nesting, but any doubt only makes the scorer stricter.
+/**
+ * @param {string} cmd - full command text.
+ * @returns {string[]} the text inside each `$( ... )` (no inner parentheses) and each backtick
+ *   pair, for the scorer to evaluate as commands in their own right.
+ */
 export function embeddedCommands(cmd) {
   const str = typeof cmd === 'string' ? cmd : String(cmd ?? '');
   return [...str.matchAll(/\$\(([^()]*)\)|`([^`]*)`/g)].map((m) => m[1] ?? m[2]);
