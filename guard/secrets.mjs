@@ -12,8 +12,10 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 
+// Sentinel label: an external scanner was configured but returned no verdict.
 export const SCAN_FAILED = 'secret scan failed';
 
+// Well-known credential formats: AWS access key IDs, "sk-" API keys, GitHub tokens, PEM private key headers.
 const PATTERNS = [
   ['AWS access key', /\bAKIA[0-9A-Z]{16}\b/],
   ['API key (sk-)', /\bsk-[A-Za-z0-9_-]{20,}/],
@@ -21,6 +23,7 @@ const PATTERNS = [
   ['private key', /-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----/],
 ];
 
+// Shannon entropy in bits per character; random secrets score high, prose and identifiers low.
 function entropy(s) {
   const counts = new Map();
   for (const c of s) counts.set(c, (counts.get(c) || 0) + 1);
@@ -29,6 +32,8 @@ function entropy(s) {
   return h;
 }
 
+// Heuristic for unknown secret formats: a 32+ char token with digits, lower and upper case and entropy > 4.2.
+// Requiring all three character classes keeps ordinary hashes-in-words and long identifiers from tripping it.
 function highEntropyToken(text) {
   for (const tok of text.match(/[A-Za-z0-9_\-+=]{32,}/g) || []) {
     if (/\d/.test(tok) && /[a-z]/.test(tok) && /[A-Z]/.test(tok) && entropy(tok) > 4.2) return true;
@@ -50,6 +55,7 @@ function shieldRoot() {
   return null;
 }
 
+// Run the external scanner on one file. Maps exit codes to 'clean' / 'found'; anything else is 'failed'. 3 s timeout.
 function run(root, file) {
   return new Promise((resolve) => {
     execFile('python3', ['-m', 'secretshield', 'scan', file, '--fail-on-findings'], {
@@ -62,6 +68,7 @@ function run(root, file) {
   });
 }
 
+// The scanner has no stdin mode, so write the text to a private (0600) temp file, scan it, and always delete it.
 async function shieldVerdict(text, root) {
   let dir;
   try {
@@ -85,6 +92,7 @@ export function scanSecretsSync(text) {
 }
 
 // Same, plus the external tool. A configured tool with no verdict yields SCAN_FAILED.
+// Cheap built-in checks run first; the slower subprocess only runs when they found nothing.
 export async function scanSecrets(text) {
   const found = scanSecretsSync(text);
   if (found.length || !text || typeof text !== 'string') return found;

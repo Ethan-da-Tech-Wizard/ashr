@@ -1,17 +1,26 @@
 // AI Quick Explain helper for ashr.
 // Calls Gemini or Grok to generate real-time plain-English risk explanations.
 // Falls back gracefully to high-quality simulated breakdowns when keys are missing or offline.
+// Design note: the hub never blocks on an AI provider. Any failure (no key,
+// network error, empty reply) falls back to a local canned explanation.
 import { loadKeys } from './keys.mjs';
 
+// Provider endpoints. The Gemini API key is passed as a query parameter by
+// callGemini; Grok uses a Bearer header instead.
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 const GROK_URL = 'https://api.x.ai/v1/chat/completions';
 
+// Offline explanation: pattern-match the ask summary against well-known risky
+// commands and return a canned plain-English description. `provider` is
+// accepted for API symmetry with the real path but is not used.
 export function simulateExplanation(ask, provider = 'gemini') {
   const summary = ask?.summary || '';
   const tool = ask?.tool || 'Command';
   const risk = ask?.risk || 'medium';
+  // Suffix appended to every explanation when the guard supplied reasons.
   const reasons = Array.isArray(ask?.reasons) && ask.reasons.length ? ` Flagged for: ${ask.reasons.join(', ')}.` : '';
 
+  // Rules run in order; the first match wins, so more dangerous patterns come first.
   if (/\.env\b/i.test(summary) || /printenv|export/i.test(summary) || /secret/i.test(summary)) {
     return `Reads or prints secret environment variables (.env / credentials). Exposing these secrets risks leaking API keys, database credentials, or tokens to logs or unauthorized services.${reasons}`;
   }
@@ -27,9 +36,12 @@ export function simulateExplanation(ask, provider = 'gemini') {
   if (/docker\s+run/i.test(summary)) {
     return `Launches a containerized environment. If privileged or mounting host directories, container processes could gain host system access.${reasons}`;
   }
+  // Generic fallback when nothing above matched.
   return `Executes "${summary}" via ${tool} with ${risk} risk.${reasons} Verify that this command is expected and safe for your system environment before approving.`;
 }
 
+// Build the LLM prompt. Detail is truncated to 1000 chars to bound request
+// size and keep long command bodies from leaking in full to a third party.
 function buildPrompt(ask) {
   const tool = ask?.tool || 'Bash';
   const summary = ask?.summary || 'command';
@@ -47,6 +59,8 @@ In 2-3 concise, plain-English sentences, explain:
 Do not use markdown formatting. Keep it readable and direct.`;
 }
 
+// POST to Gemini generateContent; returns the first candidate's text or throws.
+// `fetchFn` is injectable so tests never touch the network.
 async function callGemini({ prompt, apiKey, fetchFn }) {
   const url = `${GEMINI_URL}?key=${encodeURIComponent(apiKey)}`;
   const body = {
@@ -60,6 +74,7 @@ async function callGemini({ prompt, apiKey, fetchFn }) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    // 8 s timeout: the phone is waiting on this, so fail fast and use the fallback.
     signal: AbortSignal.timeout(8000),
   });
   if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
@@ -69,6 +84,7 @@ async function callGemini({ prompt, apiKey, fetchFn }) {
   return text;
 }
 
+// POST to xAI's OpenAI-style chat endpoint; returns the reply text or throws.
 async function callGrok({ prompt, apiKey, fetchFn }) {
   const body = {
     model: 'grok-2-latest',
@@ -99,10 +115,14 @@ async function callGrok({ prompt, apiKey, fetchFn }) {
   return text;
 }
 
+// Public entry point. Returns { explanation, provider, simulated }; `simulated`
+// is true when the text came from the local fallback rather than an LLM.
 export async function requestAiExplanation({ ask, provider = 'gemini', fetchFn = globalThis.fetch, keys = loadKeys() }) {
+  // Anything other than 'grok' means Gemini.
   const normalizedProvider = provider === 'grok' ? 'grok' : 'gemini';
   const apiKey = normalizedProvider === 'grok' ? keys.grok : keys.gemini;
 
+  // No key configured: stay fully offline.
   if (!apiKey) {
     return {
       explanation: simulateExplanation(ask, normalizedProvider),
@@ -122,6 +142,7 @@ export async function requestAiExplanation({ ask, provider = 'gemini', fetchFn =
       provider: normalizedProvider,
       simulated: false,
     };
+  // Deliberately swallow the error detail (it could contain the key-bearing URL) and fall back.
   } catch {
     return {
       explanation: simulateExplanation(ask, normalizedProvider),

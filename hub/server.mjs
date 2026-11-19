@@ -5,6 +5,8 @@
 // Purpose: HTTP hub server coordinating phone-in-the-loop agent supervision and API routes
 // ==============================================================================
 // ashr hub: zero-dependency HTTP + SSE server. See docs/CONTRACT.md.
+// Zero-dependency server: Node's http module only. Routes: /hook/* (localhost
+// agents), /api/* (paired phone, token auth), everything else GET = static app.
 import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -19,7 +21,9 @@ import * as routes from './routes.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP_DIR = path.resolve(HERE, '../app');
+// Request bodies over 1 MB are rejected.
 const MAX_BODY = 1_000_000;
+// Content types for the static files in app/.
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.webmanifest': 'application/manifest+json',
@@ -28,15 +32,18 @@ const MIME = {
 
 const LOCAL = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 // A tunnel (cloudflared) connects from localhost, so also reject proxied requests.
+// True only for genuinely local callers. A tunnel's connections also arrive from loopback, so requests carrying proxy headers are treated as remote.
 const isLocalHook = (req) =>
   LOCAL.has(req.socket.remoteAddress) && !req.headers['x-forwarded-for'] && !req.headers['cf-connecting-ip'];
 
+// Send a JSON response; no-store keeps proxies and browsers from caching state.
 const send = (res, status, obj) => {
   const body = JSON.stringify(obj);
   res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(body);
 };
 
+// Read and parse a JSON object body with a size cap. Empty body gives {}; arrays and primitives are coerced to {}.
 function readJson(req) {
   return new Promise((resolve, reject) => {
     let size = 0;
@@ -57,11 +64,13 @@ function readJson(req) {
   });
 }
 
+// Accept a token as a Bearer header or as ?t= (needed because EventSource cannot set headers).
 function tokenOk(auth, req, url) {
   const m = /^Bearer (.+)$/.exec(req.headers.authorization ?? '');
   return auth.valid(m ? m[1] : url.searchParams.get('t') ?? '');
 }
 
+// Serve files from app/. The resolved path must stay inside APP_DIR (blocks ../ traversal); directories map to index.html.
 function serveStatic(res, pathname) {
   let rel;
   try {
@@ -79,6 +88,7 @@ function serveStatic(res, pathname) {
   });
 }
 
+// Open the Server-Sent Events stream: send current state immediately, then register for updates and ping every 15 s so idle connections survive proxies.
 function openStream(ctx, req, res) {
   // no-transform stops Cloudflare from compressing (and so buffering) the stream.
   res.writeHead(200, {
@@ -106,6 +116,7 @@ function openStream(ctx, req, res) {
 export function startHub({ port = 7777, token = '', holdMs = 110_000, host = '0.0.0.0', announce = () => {}, baseUrl = null, owner = 'unknown' } = {}) {
   const auth = createAuth({ fixedToken: token });
   const ctx = { state: createState({ holdMs, owner }), tmux, auth, port, announce, baseUrl };
+  // Route table: POST path -> handler.
   const POST = { '/hook/permission': routes.hookPermission, '/hook/event': routes.hookEvent, '/hook/fake': routes.hookFake,
     '/hook/pair-code': routes.hookPairCode,
     '/hook/agent-token': routes.hookAgentToken,
@@ -114,6 +125,7 @@ export function startHub({ port = 7777, token = '', holdMs = 110_000, host = '0.
     '/api/decide': routes.apiDecide, '/api/say': routes.apiSay, '/api/kill': routes.apiKill,
     '/api/explain': routes.apiExplain };
 
+  // Request pipeline: hooks must be local and JSON; /api needs a token (except pairing); other GETs are static files.
   const server = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, 'http://hub');
@@ -148,6 +160,7 @@ export function startHub({ port = 7777, token = '', holdMs = 110_000, host = '0.
   });
 }
 
+// First non-loopback IPv4 address, used to build a pairing URL the phone can reach.
 function lanIp() {
   for (const list of Object.values(os.networkInterfaces())) {
     for (const i of list ?? []) if (i.family === 'IPv4' && !i.internal) return i.address;
@@ -163,6 +176,7 @@ function printPairUrl(url) {
   catch { console.log('(install qrencode for a terminal QR code)'); }
 }
 
+// Run as a script: start the hub with settings from environment variables.
 if (import.meta.main) {
   const port = Number(process.env.PORT) || 7777;
   const hub = await startHub({ port, owner: resolveOwner(), token: process.env.ASHR_TOKEN || '',
